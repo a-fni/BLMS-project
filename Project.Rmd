@@ -9,6 +9,7 @@ rm(list=ls())
 library(rjags)
 library(bayesplot)
 library(jagsUI)
+library(glue)
 ```
 
 ## Bayesian Learning & Monte-Carlo Simulation final project
@@ -30,7 +31,7 @@ plot(
   type="l",
   xlab="",
   ylab="GDP",
-  main="GDP+INFL"
+  main="GDP + CPI"
 )
 lines(
   data$DATE[1:305],
@@ -353,11 +354,11 @@ model {
   
   # INCREMENTAL K-STEP AHEAD METHOD
   # 1. Bootstrappingthe out-of-sample predictor
-  yp_out[1] ~ dnorm(m0 + beta * e[N_train], tau)
+  yp_out[1] ~  dnorm(m0 + beta * e[N_train], tau)
 
   # 2. Recursive step of the out-of-sample predictor
   for (t in 2:N_test) {
-    yp_out[t] ~ dnorm(m0, tau / (1 + beta^2))
+    yp_out[t] ~  dnorm(m0, tau / (1 + beta^2))
   }
   
   
@@ -467,7 +468,7 @@ for (order in 1:4) {
     data_list,
     to_save
   )
-  visualise(x_axis, series_GDP, output, title="GDP series, AR(n)")
+  visualise(x_axis, series_GDP, output, title=glue("GDP series, AR({order})"))
   
   if (order == 1) {
     o = output
@@ -512,7 +513,7 @@ output <- fit_JAGS(
 ```
 
 ```{r}
-visualise(x_axis, series_GDP, output)
+visualise(x_axis, series_GDP, output, title="GDP series, MA(1)")
 ```
 
 ```{r}
@@ -548,5 +549,5 @@ output <- fit_JAGS(
 ```
 
 ```{r}
-visualise(x_axis, series_GDP, output)
+visualise(x_axis, series_GDP, output, title="GDP series, ARMA(1, 1)")
 ```
