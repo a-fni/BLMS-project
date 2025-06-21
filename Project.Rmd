@@ -1,0 +1,552 @@
+---
+title: "Project"
+output: html_document
+date: "2025-06-20"
+---
+
+```{r}
+rm(list=ls())
+library(rjags)
+library(bayesplot)
+library(jagsUI)
+```
+
+## Bayesian Learning & Monte-Carlo Simulation final project
+
+Setting up environment, importing the dataset and visualising a graph of the two time series we will have to fit.
+
+```{r}
+rm(list=ls())
+
+# New Family Houses Sold: United States
+# Source: https://fred.stlouisfed.org/series/HSN1F
+data      <- read.csv("gdp_inflation.csv",header=T)
+data$DATE <- as.Date(data$DATE)
+
+# Plotting time series for visualisation purposes
+plot(
+  data$DATE[1:305],
+  data$GDP_PC1[1:305],
+  type="l",
+  xlab="",
+  ylab="GDP",
+  main="GDP+INFL"
+)
+lines(
+  data$DATE[1:305],
+  data$CPIAUCSL_PC1[1:305],
+  type="l",
+  col="red"
+)
+```
+
+At this point, we setup our environment by converting the values in both time series into numericals, and then splitting them into training and testing. Finally, we define some useful variables which we will be using through out our script.
+
+```{r}
+# Dataset extraction
+x_axis      <- data$DATE[1:305]
+series_GDP  <- as.numeric(data$GDP_PC1[1:305])
+series_CPI  <- as.numeric(data$CPIAUCSL_PC1[1:305])
+
+# Parameter setup (RMK: we assume both time series of same length)
+TRAIN_PERC  <- 0.15
+N_tot       <- length(series_GDP)
+N_test      <- floor(TRAIN_PERC * N_tot)
+N_train     <- N_tot - N_test
+```
+
+To further inspect our data we can also plot the respective auto-correlation functions:
+
+```{r}
+acf(series_GDP, lag.max=100)
+acf(series_CPI, lag.max=100)
+```
+
+We now define a few utility functions which will be useful later. The first one automatises the interactions with JAGS, the second one will draw plots of both the whole time-series and its out-of-sample portion only.
+
+```{r}
+fit_JAGS <- function(
+  model_string,   # JAGS model string
+  data_list,      # List of input values for JAGS
+  to_save,        # Vector with parameter names which should be saved
+  n_iter=5000,    # Number of iterations. Should be greater than n_burnin
+  n_adapt=1000,   # JAGS n.adapt internal parameter
+  n_chain=1,      # Number of chains to run
+  n_burnin=1000,  # Burn-in value
+  n_thin=1        # Thinning value
+) {
+  
+  output <- jags(
+    model.file=textConnection(model_string),
+    data=data_list,
+    parameters.to.save=to_save,
+    n.adapt=n_adapt,
+    n.iter=n_iter,
+    n.chains=n_chain,
+    n.burnin=n_burnin,
+    n.thin=n_thin
+  )
+  
+  return(output)
+}
+```
+
+```{r}
+visualise <- function(
+  x_axis,           # Values to be displayed on the x-axis of the plots
+  original_series,  # Original time series with all samples
+  output,           # Output from JAGS, with in-sample and out-of-sample predictions
+  title="",         # Title to display on the graphs
+  keep=5            # Training sampled to keep in the test graph
+) {
+  # Length of total series
+  N <- length(x_axis)
+  
+  
+  # Plotting entire graph (training-set + predictions)
+  # In-sample predicted values with their 2.5%-97.5% quantiles
+  yp_in_mean  <- output$mean$yp_in
+  yp_in_q1    <- output$q2.5$yp_in
+  yp_in_q2    <- output$q97.5$yp_in
+  in_length   <- length(yp_in_mean)
+  
+  # Out-of-sample predicted values with their 2.5%-97.5% quantiles and 25%-75% quantiles
+  yp_out_mean <- output$mean$yp_out
+  yp_out_q1   <- output$q2.5$yp_out
+  yp_out_q2   <- output$q97.5$yp_out
+  yp_out_q3   <- output$q25$yp_out
+  yp_out_q4   <- output$q75$yp_out
+  
+  # Removing potentially non-finite values from quantiles
+  yp_in_q1[is.infinite(yp_in_q1)]   <- NA
+  yp_in_q2[is.infinite(yp_in_q2)]   <- NA
+  yp_out_q1[is.infinite(yp_out_q1)] <- NA
+  yp_out_q2[is.infinite(yp_out_q2)] <- NA
+  yp_out_q3[is.infinite(yp_out_q3)] <- NA
+  yp_out_q4[is.infinite(yp_out_q4)] <- NA
+  
+  # Computing extreme values for first graph
+  min_y <- min(original_series, yp_in_q1, yp_out_q1)
+  max_y <- max(original_series, yp_in_q2, yp_out_q2)
+  
+  # Plotting REAL time series (as points only), both training set and test-set
+  plot(
+    x_axis,
+    original_series,
+    main=title, col="red",
+    xlab="time", ylab="price",
+    ylim=c(min_y, max_y)
+  )
+  lines(
+    x_axis,
+    original_series,
+    col="red"
+  )
+  
+  # Plotting a vertical line signalling end of training set and horizontal
+  # Showing the computer mean
+  abline(v=x_axis[in_length], col="magenta", lwd=1, lty=2)
+  abline(h=output$mean$m0,    col="green",   lwd=1, lty=2)
+  
+  # Plotting in-sample predictions as well as 2.5%-97.5% quantiles
+  points(x_axis[1:in_length], yp_in_mean, col="blue", pch="*")
+  lines(x_axis[1:in_length],  yp_in_q1,   col="blue", lwd=1.5)
+  lines(x_axis[1:in_length],  yp_in_q2,   col="blue", lwd=1.5)
+  
+  # Plotting out-of-sample predicted values as well as 2.5%-97.5%
+  # quantiles and 25%-75% quantiles
+  points(x_axis[(in_length+1):N], yp_out_mean, col="orange", pch="*")
+  lines(x_axis[(in_length+1):N],  yp_out_q1,   col="orange", lwd=1.5)
+  lines(x_axis[(in_length+1):N],  yp_out_q2,   col="orange", lwd=1.5)
+  lines(x_axis[(in_length+1):N],  yp_out_q3,   col="orange", lwd=1.5, lty=2)
+  lines(x_axis[(in_length+1):N],  yp_out_q4,   col="orange", lwd=1.5, lty=2)
+  
+
+  # Plotting onyl out-of-sample portion of graph (with last 5 training samples)
+  # Re-computing extreme values for second graph
+  min_y <- min(original_series[(in_length+1 - keep):N], yp_out_q1)
+  max_y <- max(original_series[(in_length+1 - keep):N], yp_out_q2)
+  
+  # Plotting REAL time series (as points only), both training set and test-set
+  plot(
+    x_axis[(in_length+1 - keep):N],
+    original_series[(in_length+1 - keep):N],
+    main=title, col="red",
+    xlab="time", ylab="price",
+    ylim=c(min_y, max_y)
+  )
+  lines(
+    x_axis[(in_length+1-keep):N],
+    original_series[(in_length+1-keep):N],
+    col="red"
+  )
+  
+  # Plotting a vertical line signalling end of training set
+  abline(v=x_axis[in_length+1], col="magenta", lwd=1, lty=2)
+  abline(h=output$mean$m0,      col="green",   lwd=1, lty=2)
+  
+  # Plotting out-of-sample predicted values as well as 2.5%-97.5%
+  # quantiles and 25%-75% quantiles
+  points(x_axis[(in_length+1):N], yp_out_mean, col="orange", pch="*")
+  lines(x_axis[(in_length+1):N],  yp_out_q1,   col="orange", lwd=1.5)
+  lines(x_axis[(in_length+1):N],  yp_out_q2,   col="orange", lwd=1.5)
+  lines(x_axis[(in_length+1):N],  yp_out_q3,   col="orange", lwd=1.5, lty=2)
+  lines(x_axis[(in_length+1):N],  yp_out_q4,   col="orange", lwd=1.5, lty=2)
+}
+```
+
+## JAGS model strings
+
+At this point, we define all our JAGS model strings so as to be able to reuse them multiple times through out the script. We start with with defining the model for a generic $AR(n)$ sequence. The auto-regressive order n is passed to the model by means of the `order` variable.
+
+$$
+y(t) = \left[ \sum_{i=1}^{n} \alpha_i y(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
+$$
+
+For any order $n ≥ 1$ the following model will correctly implement an $AR(n)$ process, which allows us to automatically test multiple AR processes easily and at once.
+
+```{r}
+# AR(n) string
+modelAR_string <- "
+model {
+  ############################################################
+  ######################## LIKELIHOOD ########################
+  ############################################################
+  
+  # 1. Bootstrapping the AR process
+  mu[1:order]     <- y[1:order]
+  yp_in[1:order]  <- y[1:order]
+  
+  # 2. Recursive step of the AR process
+  for (t in (order+1):N_train) {
+    mu[t]     <- inprod(alpha_rev, y[(t-order):(t-1)]) + m0
+    y[t]      ~  dnorm(mu[t], tau)
+    yp_in[t]  ~  dnorm(mu[t], tau)
+  }
+  
+  ############################################################
+  ######################## PREDICTION ########################
+  ############################################################
+  
+  # Init helper array z
+  z[1:order] <- y[(N_train-order+1):N_train]
+  
+  for (t in (order+1):(order+N_test)) {
+    mu_z[t] <- inprod(alpha_rev, z[(t-order):(t-1)]) + m0
+    z[t]    ~  dnorm(mu_z[t], tau)
+  }
+  
+  yp_out <- z[(order+1):(order+N_test)]
+  
+  ############################################################
+  ########################## PRIOR ###########################
+  ############################################################
+  
+  m0  ~ dnorm(0.0, 1.0E-4)
+  tau ~ dgamma(0.1, 10)
+  for (i in 1:order) {
+    alpha[i] ~ dunif(-1.5, 1.5)
+    alpha_rev[order - i + 1] <- alpha[i]
+  }
+  
+  # Defining converstion from precision to variance here
+  sigma2 <- 1 / tau
+}"
+```
+
+We now define an $MA(1)$ process.
+
+$$
+y(t) = \alpha \eta(t-1) + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
+$$
+
+```{r}
+modelMA_string <- "
+model {
+  ############################################################
+  ######################## LIKELIHOOD ########################
+  ############################################################
+  
+  # 1. Bootstrap the MA(1) sequence
+  e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
+  yp_in[1]  <- y[1]
+  
+  # 2. Recursive step of the MA process
+  for (t in 2:N_train) {
+    mu[t]     <- m0 + beta * e[t-1]
+    y[t]      ~  dnorm(mu[t], tau)
+    yp_in[t]  ~  dnorm(mu[t], tau)
+    
+    # Extracting actual WN value
+    e[t]  <- y[t] - mu[t]
+  }
+
+  
+  ############################################################
+  ######################## PREDICTION ########################
+  ############################################################
+
+  # 1. Bootstrappingthe out-of-sample predictor
+  e_pred[1] ~  dnorm(0, tau)
+  mu_out[1] <- m0 + beta * e[N_train]
+  yp_out[1] ~  dnorm(mu_out[1], tau)
+  
+  # 2. Recursive step of the out-of-sample predictor
+  for (t in 2:N_test) {
+    mu_out[t] <- m0 + beta * e_pred[t-1]
+    yp_out[t] ~  dnorm(mu_out[t], tau)
+    e_pred[t] ~  dnorm(0, tau)
+  }
+  
+  
+  ############################################################
+  ########################## PRIOR ###########################
+  ############################################################
+  
+  m0    ~ dnorm(0.0, 1.0E-4)
+  tau   ~ dgamma(0.01, 0.01)
+  beta  ~ dunif(-1, 1)
+  
+  # Defining converstion from precision to variance here
+  sigma2 <- 1 / tau
+}"
+```
+
+```{r}
+modelMA_string_predictor <- "
+model {
+  ############################################################
+  ######################## LIKELIHOOD ########################
+  ############################################################
+  
+  # 1. Bootstrap the MA(1) sequence
+  e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
+  yp_in[1]  <- y[1]
+  
+  # 2. Recursive step of the MA process
+  for (t in 2:N_train) {
+    mu[t]     <- m0 + beta * e[t-1]
+    y[t]      ~  dnorm(mu[t], tau)
+    yp_in[t]  ~  dnorm(m0 + beta * (y[t-1] - yp_in[t-1]), tau)
+    
+    # Extracting actual WN value
+    e[t] <- y[t] - mu[t]
+  }
+
+  
+  ############################################################
+  ######################## PREDICTION ########################
+  ############################################################
+
+  # ALWAYS 1-STEP-AHEAD METHOD
+  # # 1. Bootstrappingthe out-of-sample predictor
+  # e_pred[1] ~  dnorm(0, tau)
+  # mu_out[1] <- m0 + beta * e[N_train]
+  # yp_out[1] ~  dnorm(mu_out[1], tau)
+  # 
+  # # 2. Recursive step of the out-of-sample predictor
+  # for (t in 2:N_test) {
+  #   mu_out[t] <- m0 + beta * e_pred[t-1]
+  #   yp_out[t] ~  dnorm(m0 + beta * (yp_out[t-1] - mu_out[t-1]), tau)
+  #   e_pred[t] ~  dnorm(0, tau)
+  # }
+  
+  # INCREMENTAL K-STEP AHEAD METHOD
+  # 1. Bootstrappingthe out-of-sample predictor
+  yp_out[1] ~ dnorm(m0 + beta * e[N_train], tau)
+
+  # 2. Recursive step of the out-of-sample predictor
+  for (t in 2:N_test) {
+    yp_out[t] ~ dnorm(m0, tau / (1 + beta^2))
+  }
+  
+  
+  ############################################################
+  ########################## PRIOR ###########################
+  ############################################################
+  
+  m0    ~ dnorm(0.0, 1.0E-4)
+  tau   ~ dgamma(0.01, 0.01)
+  beta  ~ dunif(-1, 1)
+  
+  # Defining converstion from precision to variance here
+  sigma2 <- 1 / tau
+}"
+```
+
+The following model will merge the two previous models defining an $ARMA(1, 1)$ model.
+
+$$
+y(t) = \beta y(t-1) + \alpha \eta(t-1) + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2).
+$$
+
+The choice for the auto-regressive part is a result of the analysis of the performance of $AR(n)$ models with $n > 1$ which seemed to indicate that a shallower memory was better.
+
+```{r}
+modelARMA_string <- "
+model {
+  ############################################################
+  ######################## LIKELIHOOD ########################
+  ############################################################
+  
+  # 1. Bootstrap the ARMA sequence
+  e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
+  yp_in[1]  <- y[1]
+
+  # 2. Recursive step of the ARMA process
+  for (t in 2:N_train) {
+    mu[t]     <- m0 + beta * y[t-1] + alpha * e[t-1]
+    y[t]      ~  dnorm(mu[t], tau)
+    yp_in[t]  ~  dnorm(mu[t], tau)
+    
+    # Extracting actual WN value
+    e[t]  <- y[t] - mu[t]
+  }
+
+
+  ############################################################
+  ######################## PREDICTION ########################
+  ############################################################
+  
+  # 1. Bootstrappingthe out-of-sample predictor
+  e_pred[1] ~  dnorm(0, tau)
+  mu_out[1] <- m0 + beta * y[N_train] + alpha * e[N_train]
+  yp_out[1] ~  dnorm(mu_out[1], tau)
+  
+  # 2. Recursive step of the out-of-sample predictor
+  for (t in 2:N_test) {
+    mu_out[t] <- m0 + beta * yp_out[t-1] + alpha * e_pred[t-1]
+    yp_out[t] ~  dnorm(mu_out[t], tau)
+    e_pred[t] ~  dnorm(0, tau)
+  }
+  
+  
+  ############################################################
+  ########################## PRIOR ###########################
+  ############################################################
+  
+  m0    ~ dnorm(0.0, 1.0E-4)
+  beta  ~ dunif(-1, 1)
+  alpha ~ dunif(-1, 1)
+  tau   ~ dgamma(0.01, 0.01)
+  
+  # Defining converstion from precision to variance here
+  sigma2 <- 1 / tau
+}
+"
+```
+
+## GDP time series
+
+We will, at first, start off with some $AR(n)$ models, with increasing values of $n$. We will use the obtained results ot decide whether or not the selected model may apply to the problem at hand, and we will also evaluate which regressive order is best.
+
+```{r}
+to_save <- c(
+  "alpha",
+  "m0",
+  "sigma2",
+  "yp_in",
+  "yp_out"
+)
+
+# Creating placeholder to store outputs
+o <- c()
+
+# Trying our AR(n) from n=1 to 4
+for (order in 1:4) {
+  data_list <- list(
+    "y"=series_GDP,
+    "order"=order,
+    "N_train"=N_train,
+    "N_test"=N_test
+  )
+  
+  # Perform simulations and visualise output
+  output <- fit_JAGS(
+    modelAR_string,
+    data_list,
+    to_save
+  )
+  visualise(x_axis, series_GDP, output, title="GDP series, AR(n)")
+  
+  if (order == 1) {
+    o = output
+  }
+}
+```
+
+```{r}
+# Extract only AR(1)
+output <- o
+
+# Inspecting results
+parameters <- c("alpha", "m0")
+mcmc_trace(output$samples, pars=parameters)
+mcmc_areas(output$samples, pars=parameters, prob=0.95)
+
+print(output)
+```
+
+We will now also fit an MA(1) model to evaluate whether it is a better model.
+
+```{r}
+to_save <- c(
+  "beta",
+  "m0",
+  "sigma2",
+  "yp_in",
+  "yp_out"
+)
+data_list <- list(
+  "y"=series_GDP,
+  "N_train"=N_train,
+  "N_test"=N_test
+)
+
+# Perform simulations and visualise output
+output <- fit_JAGS(
+  modelMA_string_predictor,
+  data_list,
+  to_save
+)
+```
+
+```{r}
+visualise(x_axis, series_GDP, output)
+```
+
+```{r}
+# Inspecting results
+parameters <- c("beta", "m0")
+mcmc_trace(output$samples, pars=parameters)
+mcmc_areas(output$samples, pars=parameters, prob=0.95)
+
+print(output)
+```
+
+```{r}
+to_save <- c(
+  "alpha",
+  "beta",
+  "m0",
+  "sigma2",
+  "yp_in",
+  "yp_out"
+)
+data_list <- list(
+  "y"=series_GDP,
+  "N_train"=N_train,
+  "N_test"=N_test
+)
+
+# Perform simulations and visualise output
+output <- fit_JAGS(
+  modelARMA_string,
+  data_list,
+  to_save
+)
+```
+
+```{r}
+visualise(x_axis, series_GDP, output)
+```
