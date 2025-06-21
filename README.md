@@ -11,7 +11,7 @@ The detailed version of the assignment can be found under `assignment/Project202
 paragraph 3.6. It consists in modelling two time-series (US GDP and ICP) in order to make predictions
 on its future values. In order to do this, a portion of each the time-series was to learn an
 appropriate modelling, whereas the final part was used to evaluate predictive capabilities of the
-learned model. Each time-series was modelled in several ways (MA(1), RA(n), ARMA(1, 1), ...) and 
+learned model. Each time-series was modelled in several ways _(`MA(1)`, `RA(n)`, `ARMA(1, 1)`, ...)_ and 
 appropriate _(mainly bayesian)_ metrics were used to evaluate them and perform model selection.\
 A report describing the whole development process, intuitions and results can be found in this
 repository.
