@@ -10,6 +10,8 @@ library(rjags)
 library(bayesplot)
 library(jagsUI)
 library(glue)
+library(loo)
+library(knitr)
 ```
 
 ## Bayesian Learning & Monte-Carlo Simulation final project
@@ -196,6 +198,69 @@ visualise <- function(
 }
 ```
 
+```{r}
+
+# K is the number of effective params
+compute_metrics <- function(output, series, N_train, k) {
+  
+  ############################################################
+  ###################### IN-SAMPLE ###########################
+  ############################################################
+  # In-sample: DIC, WAIC, BIC
+  DIC_val <- output$DIC
+  
+  ll_mat <- output$sims.list$loglik                       # draws × N_train
+  waic_res <- suppressWarnings( waic(ll_mat) )
+  WAIC_val <- waic_res$estimates["waic","Estimate"]
+  
+  
+  #BIC computation
+  #Sum of the log-likelihoods for each draw
+  ll_sum <- rowSums(ll_mat)
+  
+  # maximum of the sum: estimate of log p(y|theta_hat), that is, log-lik_max
+  lhat <- max(ll_sum)
+  
+  BIC_val <- -2 * lhat + k * log(N_train)
+  
+  # BIC Approx
+  # BIC_val  <- DIC_val + k * (log(N_train) - 2) 
+  
+  ############################################################
+  #################### OUT-OF-SAMPLE #########################
+  ############################################################
+  
+  y_pred <- output$mean$yp_out
+  y_true <- series[(N_train+1):length(series)]
+  e <- y_pred - y_true
+  
+  # MSE
+  MSE_val <- mean((e)^2)
+  
+  #MAE
+  MAE_val <- mean(abs(e))
+  MAPE_val <- mean(abs(e / y_true)) * 100
+  
+  #SMAPE
+  SMAPE_val <- mean(2 * abs(e) / (abs(y_true) + abs(y_pred))) * 100
+  
+  #MASE
+  scale <- mean(abs(diff(series[1:N_train])))
+  MASE_val <- MAE_val / scale
+  
+ list(
+    DIC   = round(DIC_val, 1),
+    WAIC  = round(WAIC_val, 1),
+    BIC   = round(BIC_val, 1),
+    MSE   = round(MSE_val, 3),
+    MAE   = round(MAE_val, 3),
+    MAPE  = round(MAPE_val, 1),
+    SMAPE = round(SMAPE_val, 1),
+    MASE  = round(MASE_val, 3)
+  )
+}
+```
+
 ## JAGS model strings
 
 At this point, we define all our JAGS model strings so as to be able to reuse them multiple times through out the script. We start with with defining the model for a generic $AR(n)$ sequence. The auto-regressive order n is passed to the model by means of the `order` variable.
@@ -218,10 +283,15 @@ model {
   mu[1:order]     <- y[1:order]
   yp_in[1:order]  <- y[1:order]
   
+  for (t in 1:order) {
+    loglik[t] <- logdensity.norm(y[t], mu[t], tau)
+  }
+  
   # 2. Recursive step of the AR process
   for (t in (order+1):N_train) {
     mu[t]     <- inprod(alpha_rev, y[(t-order):(t-1)]) + m0
     y[t]      ~  dnorm(mu[t], tau)
+    loglik[t] <- logdensity.norm(y[t], mu[t], tau)
     yp_in[t]  ~  dnorm(mu[t], tau)
   }
   
@@ -272,10 +342,13 @@ model {
   e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
   yp_in[1]  <- y[1]
   
+  loglik[1] <- logdensity.norm(y[1], m0, tau)
+  
   # 2. Recursive step of the MA process
   for (t in 2:N_train) {
     mu[t]     <- m0 + beta * e[t-1]
     y[t]      ~  dnorm(mu[t], tau)
+    loglik[t] <- logdensity.norm(y[t], mu[t], tau)
     yp_in[t]  ~  dnorm(mu[t], tau)
     
     # Extracting actual WN value
@@ -323,11 +396,13 @@ model {
   # 1. Bootstrap the MA(1) sequence
   e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
   yp_in[1]  <- y[1]
+  loglik[1] <- logdensity.norm(y[1], m0, tau) 
   
   # 2. Recursive step of the MA process
   for (t in 2:N_train) {
     mu[t]     <- m0 + beta * e[t-1]
     y[t]      ~  dnorm(mu[t], tau)
+    loglik[t] <- logdensity.norm(y[t], mu[t], tau)
     yp_in[t]  ~  dnorm(m0 + beta * (y[t-1] - yp_in[t-1]), tau)
     
     # Extracting actual WN value
@@ -393,11 +468,13 @@ model {
   # 1. Bootstrap the ARMA sequence
   e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
   yp_in[1]  <- y[1]
+  loglik[1] <- logdensity.norm(y[1], m0, tau)
 
   # 2. Recursive step of the ARMA process
   for (t in 2:N_train) {
     mu[t]     <- m0 + beta * y[t-1] + alpha * e[t-1]
     y[t]      ~  dnorm(mu[t], tau)
+    loglik[t] <- logdensity.norm(y[t], mu[t], tau)
     yp_in[t]  ~  dnorm(mu[t], tau)
     
     # Extracting actual WN value
@@ -442,19 +519,37 @@ model {
 We will, at first, start off with some $AR(n)$ models, with increasing values of $n$. We will use the obtained results ot decide whether or not the selected model may apply to the problem at hand, and we will also evaluate which regressive order is best.
 
 ```{r}
+# Metrics Dataframe
+metrics_df <- data.frame(
+  Model = character(),
+  DIC   = numeric(),  
+  WAIC  = numeric(), 
+  BIC   = numeric(),
+  MSE   = numeric(),  
+  MAE   = numeric(), 
+  MAPE  = numeric(),
+  SMAPE = numeric(),  
+  MASE  = numeric(),
+  stringsAsFactors = FALSE
+)
+```
+
+```{r}
 to_save <- c(
   "alpha",
   "m0",
   "sigma2",
   "yp_in",
-  "yp_out"
+  "yp_out",
+  "loglik"
 )
 
 # Creating placeholder to store outputs
-o <- c()
+o <- lisr()
 
-# Trying our AR(n) from n=1 to 4
-for (order in 1:4) {
+# Trying our AR(n) from n=1 to max_order
+max_order <- 8
+for (order in 1:max_order) {
   data_list <- list(
     "y"=series_GDP,
     "order"=order,
@@ -473,6 +568,23 @@ for (order in 1:4) {
   if (order == 1) {
     o = output
   }
+  
+  mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
+  metrics_df <- rbind(
+    metrics_df,
+    data.frame(
+      Model = paste0("AR(",order,")"),
+      DIC   = mets$DIC,
+      WAIC  = mets$WAIC,
+      BIC   = mets$BIC,
+      MSE   = mets$MSE,
+      MAE   = mets$MAE,
+      MAPE  = mets$MAPE,
+      SMAPE = mets$SMAPE,
+      MASE  = mets$MASE,
+      stringsAsFactors = FALSE
+    )
+  )
 }
 ```
 
@@ -496,7 +608,8 @@ to_save <- c(
   "m0",
   "sigma2",
   "yp_in",
-  "yp_out"
+  "yp_out",
+  "loglik"
 )
 data_list <- list(
   "y"=series_GDP,
@@ -510,10 +623,25 @@ output <- fit_JAGS(
   data_list,
   to_save
 )
-```
 
-```{r}
 visualise(x_axis, series_GDP, output, title="GDP series, MA(1)")
+
+mets <- compute_metrics(output, series_GDP, N_train, k=3)
+metrics_df <- rbind(
+  metrics_df,
+  data.frame(
+    Model = "MA(1)",
+    DIC   = mets$DIC,
+    WAIC  = mets$WAIC,
+    BIC   = mets$BIC,
+    MSE   = mets$MSE,
+    MAE   = mets$MAE,
+    MAPE  = mets$MAPE,
+    SMAPE = mets$SMAPE,
+    MASE  = mets$MASE,
+    stringsAsFactors = FALSE
+  )
+)
 ```
 
 ```{r}
@@ -532,7 +660,8 @@ to_save <- c(
   "m0",
   "sigma2",
   "yp_in",
-  "yp_out"
+  "yp_out",
+  "loglik"
 )
 data_list <- list(
   "y"=series_GDP,
@@ -546,8 +675,38 @@ output <- fit_JAGS(
   data_list,
   to_save
 )
+
+visualise(x_axis, series_GDP, output, title="GDP series, ARMA(1, 1)")
+
+mets <- compute_metrics(output, series_GDP, N_train, k=4)
+
+metrics_df <- rbind(
+  metrics_df,
+  data.frame(
+    Model = "ARMA(1,1)",
+    DIC   = mets$DIC,
+    WAIC  = mets$WAIC,
+    BIC   = mets$BIC,
+    MSE   = mets$MSE,
+    MAE   = mets$MAE,
+    MAPE  = mets$MAPE,
+    SMAPE = mets$SMAPE,
+    MASE  = mets$MASE,
+    stringsAsFactors = FALSE
+  )
+)
 ```
 
 ```{r}
-visualise(x_axis, series_GDP, output, title="GDP series, ARMA(1, 1)")
+kable(
+  metrics_df,
+  caption    = "Models' Metrics",
+  digits     = c(1,1,1,1,3,3,1),
+  format     = "html",
+  table.attr = 'cellpadding="10" cellspacing="0"'
+)
 ```
+
+PAY ATTENTION:
+
+The MAPE exceeds 100% because the series (quarterly or monthly GDP growth rates) has actual values (denominators) that are very small or close to zero in some periods, which amplifies the percentage.
