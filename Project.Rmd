@@ -261,6 +261,16 @@ compute_metrics <- function(output, series, N_train, k) {
 }
 ```
 
+compute_dic_marginal <- function(ll_mat) {
+  dev      <- -2 * ll_mat
+  dev_sum  <- rowSums(dev)
+  Dbar     <- mean(dev_sum)
+  Dhat     <- sum(-2 * colMeans(ll_mat))
+  pD       <- Dbar - Dhat
+  DIC      <- Dbar + pD
+  return(DIC)
+}
+
 ## JAGS model strings
 
 At this point, we define all our JAGS model strings so as to be able to reuse them multiple times through out the script. We start with with defining the model for a generic $AR(n)$ sequence. The auto-regressive order n is passed to the model by means of the `order` variable.
@@ -520,7 +530,7 @@ We will, at first, start off with some $AR(n)$ models, with increasing values of
 
 ```{r}
 # Metrics Dataframe
-metrics_df <- data.frame(
+metrics_df_GDP <- data.frame(
   Model = character(),
   DIC   = numeric(),  
   WAIC  = numeric(), 
@@ -532,6 +542,20 @@ metrics_df <- data.frame(
   MASE  = numeric(),
   stringsAsFactors = FALSE
 )
+
+metrics_df_CPI <- data.frame(
+  Model = character(),
+  DIC   = numeric(),  
+  WAIC  = numeric(), 
+  BIC   = numeric(),
+  MSE   = numeric(),  
+  MAE   = numeric(), 
+  MAPE  = numeric(),
+  SMAPE = numeric(),  
+  MASE  = numeric(),
+  stringsAsFactors = FALSE
+)
+
 ```
 
 ```{r}
@@ -570,8 +594,8 @@ for (order in 1:max_order) {
   }
   
   mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
-  metrics_df <- rbind(
-    metrics_df,
+  metrics_df_GDP <- rbind(
+    metrics_df_GDP,
     data.frame(
       Model = paste0("AR(",order,")"),
       DIC   = mets$DIC,
@@ -627,8 +651,8 @@ output <- fit_JAGS(
 visualise(x_axis, series_GDP, output, title="GDP series, MA(1)")
 
 mets <- compute_metrics(output, series_GDP, N_train, k=3)
-metrics_df <- rbind(
-  metrics_df,
+metrics_df_GDP <- rbind(
+  metrics_df_GDP,
   data.frame(
     Model = "MA(1)",
     DIC   = mets$DIC,
@@ -678,10 +702,10 @@ output <- fit_JAGS(
 
 visualise(x_axis, series_GDP, output, title="GDP series, ARMA(1, 1)")
 
-mets <- compute_metrics(output, series_GDP, N_train, k=4)
+mets <- compute_metrics(output, series_GDP, N_train, k=2+2)
 
-metrics_df <- rbind(
-  metrics_df,
+metrics_df_GDP <- rbind(
+  metrics_df_GDP,
   data.frame(
     Model = "ARMA(1,1)",
     DIC   = mets$DIC,
@@ -708,19 +732,28 @@ model {
   ######################## LIKELIHOOD ########################
   ############################################################
   
-  # mu[1:2,1:order] = y[,1:order]
+  mu[1:2,1:order] = y[,1:order]
   yp_in[1:2,1:order] = y[,1:order]
   
   for (t in (order+1):N_train) {
-    mu[1:2, t, 1] <- m0
+    mu_tmp[1:2, t, 1] <- m0
     for (j in 1:order) {
-      mu[1:2,t,j+1] <- mu[1:2, t, j] + A[,,j] %*% y[,(t-j)]
+      mu_tmp[1:2,t,j+1] <- mu_tmp[1:2, t, j] + A[,,j] %*% y[,(t-j)]
     }
-    y[1:2,t]     ~ dmnorm(mu[1:2,t,order+1], tau)
-    yp_in[1:2,t] ~ dmnorm(mu[1:2,t,order+1], tau)
-    
+    mu[1:2,t]   <- mu_tmp[1:2,t,order+1]
+    y[1:2,t]     ~ dmnorm(mu[1:2,t], tau)
+    yp_in[1:2,t] ~ dmnorm(mu[1:2,t], tau)
+
+    # Compute univariate log-likelihood
+    loglik_gdp[t]  <- logdensity.norm(y[1,t], mu[1,t], 1 / sigma2[1,1])
+    loglik_infl[t] <- logdensity.norm(y[2,t], mu[2,t], 1 / sigma2[2,2])
   }
   
+  for (t in 1:order) {
+    loglik_gdp[t]  <- logdensity.norm(y[1,t], mu[1,t], 1 / sigma2[1,1])
+    loglik_infl[t] <- logdensity.norm(y[2,t], mu[2,t], 1 / sigma2[2,2])
+  }
+
   ############################################################
   ######################## PREDICTION ########################
   ############################################################
@@ -760,7 +793,11 @@ model {
   ############################################################
   ######################## EXTRACTION ########################
   ############################################################
-  
+
+  # Expose them for output in R
+  loglik_gdp_out   <- loglik_gdp
+  loglik_infl_out  <- loglik_infl
+
   yp_in_gdp   <- yp_in[1,]
   yp_in_infl  <- yp_in[2,]
   yp_out_gdp  <- yp_out[1,]
@@ -820,7 +857,9 @@ to_save <- c(
   "yp_in_gdp",
   "yp_in_infl",
   "yp_out_gdp",
-  "yp_out_infl"
+  "yp_out_infl",
+  "loglik_gdp",   # marginal log-likelihood for GDP
+  "loglik_infl"   # marginal log-likelihood for CPI
 )
 
 data_list <- list(
@@ -849,17 +888,77 @@ visualise_VAR(
   keep=5
 )
 
-#TODO: metrics for VAR
+
+# Wrapper for GDP-only metrics
+output_gdp <- list(
+  mean      = list(yp_out = jags_output_VAR$mean$yp_out_gdp),
+  sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_gdp),
+  DIC       = compute_dic_marginal(jags_output_VAR$sims.list$loglik_gdp)
+)
+
+# Wrapper for CPI-only metrics
+output_infl <- list(
+  mean      = list(yp_out = jags_output_VAR$mean$yp_out_infl),
+  sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_infl),
+  DIC       = compute_dic_marginal(jags_output_VAR$sims.list$loglik_infl)
+)
+
+
+# Compute univariate metrics for GDP and CPI
+mets_VAR_gdp  <- compute_metrics(output_gdp,  series_GDP, N_train, k = 4*order + 2 + 3)
+mets_VAR_infl <- compute_metrics(output_infl, series_CPI, N_train, k = 4*order + 2 + 3)
+
+metrics_df_GDP <- rbind(
+  metrics_df_GDP,
+  data.frame(
+    Model = paste0("VAR_univar_GDP(", order, ")"),
+    DIC   = mets_VAR_gdp$DIC,
+    WAIC  = mets_VAR_gdp$WAIC,
+    BIC   = mets_VAR_gdp$BIC,
+    MSE   = mets_VAR_gdp$MSE,
+    MAE   = mets_VAR_gdp$MAE,
+    MAPE  = mets_VAR_gdp$MAPE,
+    SMAPE = mets_VAR_gdp$SMAPE,
+    MASE  = mets_VAR_gdp$MASE,
+    stringsAsFactors = FALSE
+  )
+)
+
+metrics_df_CPI <- rbind(
+  metrics_df_CPI,
+  data.frame(
+    Model = paste0("VAR_univar_CPI(", order, ")"),
+    DIC   = mets_VAR_infl$DIC,
+    WAIC  = mets_VAR_infl$WAIC,
+    BIC   = mets_VAR_infl$BIC,
+    MSE   = mets_VAR_infl$MSE,
+    MAE   = mets_VAR_infl$MAE,
+    MAPE  = mets_VAR_infl$MAPE,
+    SMAPE = mets_VAR_infl$SMAPE,
+    MASE  = mets_VAR_infl$MASE,
+    stringsAsFactors = FALSE
+  )
+)
 ```
 
 ## Metrics
 
 ```{r}
+# GDP table
 kable(
-  metrics_df,
-  caption    = "Models' Metrics",
-  digits     = c(1,1,1,1,3,3,1),
-  format     = "html",
+  metrics_df_GDP,
+  caption = "Univariate model metrics — GDP series",
+  digits  = c(1,1,1,1,3,3,1,1,3),
+  format  = "html",
+  table.attr = 'cellpadding="10" cellspacing="0"'
+)
+
+# CPI table
+kable(
+  metrics_df_CPI,
+  caption = "Univariate model metrics — CPI series",
+  digits  = c(1,1,1,1,3,3,1,1,3),
+  format  = "html",
   table.attr = 'cellpadding="10" cellspacing="0"'
 )
 ```
