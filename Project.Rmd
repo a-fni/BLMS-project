@@ -696,6 +696,163 @@ metrics_df <- rbind(
   )
 )
 ```
+## VAR
+
+Finally, we will to fit generic order VAR(n) models
+
+```{r}
+modelVAR_string = "
+model {
+
+  ############################################################
+  ######################## LIKELIHOOD ########################
+  ############################################################
+  
+  # mu[1:2,1:order] = y[,1:order]
+  yp_in[1:2,1:order] = y[,1:order]
+  
+  for (t in (order+1):N_train) {
+    mu[1:2, t, 1] <- m0
+    for (j in 1:order) {
+      mu[1:2,t,j+1] <- mu[1:2, t, j] + A[,,j] %*% y[,(t-j)]
+    }
+    y[1:2,t]     ~ dmnorm(mu[1:2,t,order+1], tau)
+    yp_in[1:2,t] ~ dmnorm(mu[1:2,t,order+1], tau)
+    
+  }
+  
+  ############################################################
+  ######################## PREDICTION ########################
+  ############################################################
+  
+  z[1:2,1:order] = y[,(N_train-order+1):N_train]
+  
+  for (t in (order+1):(order+N_test)) {
+    mu_z[1:2, t, 1] <- m0
+    for (j in 1:order) {
+      mu_z[1:2,t,j+1] <- mu_z[1:2, t, j] + A[,,j] %*% z[,(t-j)]
+    }
+    z[1:2,t] ~ dmnorm(mu_z[1:2,t,order+1], tau)
+  }
+  
+  yp_out[1:2,1:N_test] = z[1:2,(order+1):(order+N_test)]
+  
+  ############################################################
+  ########################## PRIOR ###########################
+  ############################################################
+
+  for (i in 1:2) {
+    for (j in 1:2) {
+      for (o in 1:order) {
+        # A[i, j, o] ~ dunif(-1.2, 1.2)
+        A[i, j, o] ~ dnorm(0, 10)
+      }
+    }
+  }
+  
+  tau     ~ dwish(R, 3) # dwish(ScaleMatrix... Identity should be ok, df)
+  m_gdp   ~ dnorm(0.0, 1.0E-4)
+  m_infl  ~ dnorm(0.0, 1.0E-4)
+  m0     <- c(m_gdp, m_infl)
+  
+  sigma2 <- inverse(tau)
+  
+  ############################################################
+  ######################## EXTRACTION ########################
+  ############################################################
+  
+  yp_in_gdp   <- yp_in[1,]
+  yp_in_infl  <- yp_in[2,]
+  yp_out_gdp  <- yp_out[1,]
+  yp_out_infl <- yp_out[2,]
+
+}"
+```
+
+```{r}
+visualise_VAR = function(
+  x_axis,               # Values to be displayed on the x-axis of the plots
+  original_series_gdp,  # Original GDP time series with all samples
+  original_series_infl, # Original INFLATION time series with all samples
+  output,               # Output from VAR JAGS, with in-sample and out-of-sample predictions
+  title="",             # Title to display on the graphs
+  keep=5                # Training sampled to keep in the test graph
+) {
+  
+  output_gdp = list()
+  output_gdp$mean$yp_in   = output$mean$yp_in_gdp
+  output_gdp$q2.5$yp_in   = output$q2.5$yp_in_gdp
+  output_gdp$q97.5$yp_in  = output$q97.5$yp_in_gdp
+  output_gdp$mean$yp_out  = output$mean$yp_out_gdp
+  output_gdp$q2.5$yp_out  = output$q2.5$yp_out_gdp
+  output_gdp$q97.5$yp_out = output$q97.5$yp_out_gdp
+  output_gdp$q25$yp_out   = output$q25$yp_out_gdp
+  output_gdp$q75$yp_out   = output$q75$yp_out_gdp
+  output_gdp$mean$m0      = output$mean$m_gdp
+  
+  output_infl = list()
+  output_infl$mean$yp_in   = output$mean$yp_in_infl
+  output_infl$q2.5$yp_in   = output$q2.5$yp_in_infl
+  output_infl$q97.5$yp_in  = output$q97.5$yp_in_infl
+  output_infl$mean$yp_out  = output$mean$yp_out_infl
+  output_infl$q2.5$yp_out  = output$q2.5$yp_out_infl
+  output_infl$q97.5$yp_out = output$q97.5$yp_out_infl
+  output_infl$q25$yp_out   = output$q25$yp_out_infl
+  output_infl$q75$yp_out   = output$q75$yp_out_infl
+  output_infl$mean$m0      = output$mean$m_infl
+  
+  visualise(x_axis, original_series_gdp, output_gdp, title, keep)
+  visualise(x_axis, original_series_infl, output_infl, title, keep)
+}
+```
+
+```{r}
+R = matrix(c(1, 0, 0, 1), nrow=2, byrow=TRUE)
+y = matrix(c(series_GDP, series_CPI), nrow=2, byrow=TRUE)
+
+order=10
+
+to_save <- c(
+  "A",
+  "m_gdp",
+  "m_infl",
+  "sigma2",
+  "yp_in_gdp",
+  "yp_in_infl",
+  "yp_out_gdp",
+  "yp_out_infl"
+)
+
+data_list <- list(
+  "y"=y,
+  "R"=R,
+  "order"=order,
+  "N_train" = N_train,
+  "N_test" = N_test
+)
+
+jags_output_VAR = fit_JAGS(
+  modelVAR_string,
+  data_list,
+  to_save,
+  n_iter=6000,
+  n_adapt=1000,
+  n_chain=1,
+  n_burnin=2000)
+
+visualise_VAR(
+  x_axis,
+  series_GDP,
+  series_CPI,
+  jags_output_VAR,
+  title=glue("VAR({order})"),
+  keep=5
+)
+
+#TODO: metrics for VAR
+```
+
+## Metrics
 
 ```{r}
 kable(
