@@ -207,9 +207,9 @@ compute_metrics <- function(output, series, N_train, k) {
   ###################### IN-SAMPLE ###########################
   ############################################################
   # In-sample: DIC, WAIC, BIC
-  DIC_val <- output$DIC
+  ll_mat <- output$sims.list$loglik
+  DIC_val <- compute_dic_marginal(ll_mat)
   
-  ll_mat <- output$sims.list$loglik                       # draws × N_train
   waic_res <- suppressWarnings( waic(ll_mat) )
   WAIC_val <- waic_res$estimates["waic","Estimate"]
   
@@ -916,14 +916,14 @@ visualise_VAR(
 output_gdp <- list(
   mean      = list(yp_out = jags_output_VAR$mean$yp_out_gdp, train_metrics_skip=jags_output_VAR$mean$train_metrics_skip),
   sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_gdp),
-  DIC       = compute_dic_marginal(jags_output_VAR$sims.list$loglik_gdp)
+  DIC_gpd       = compute_dic_marginal(jags_output_VAR$sims.list$loglik_gdp)
 )
 
 # Wrapper for CPI-only metrics
 output_infl <- list(
   mean      = list(yp_out = jags_output_VAR$mean$yp_out_infl, train_metrics_skip=jags_output_VAR$mean$train_metrics_skip),
   sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_infl),
-  DIC       = compute_dic_marginal(jags_output_VAR$sims.list$loglik_infl)
+  DIC_cpi      = compute_dic_marginal(jags_output_VAR$sims.list$loglik_infl)
 )
 
 
@@ -935,7 +935,7 @@ metrics_df_GDP <- rbind(
   metrics_df_GDP,
   data.frame(
     Model = paste0("VAR_univar_GDP(", order, ")"),
-    DIC   = mets_VAR_gdp$DIC,
+    DIC   = output_gdp$DIC_gpd,
     WAIC  = mets_VAR_gdp$WAIC,
     BIC   = mets_VAR_gdp$BIC,
     MSE   = mets_VAR_gdp$MSE,
@@ -951,7 +951,7 @@ metrics_df_CPI <- rbind(
   metrics_df_CPI,
   data.frame(
     Model = paste0("VAR_univar_CPI(", order, ")"),
-    DIC   = mets_VAR_infl$DIC,
+    DIC   = output_infl$DIC_cpi,
     WAIC  = mets_VAR_infl$WAIC,
     BIC   = mets_VAR_infl$BIC,
     MSE   = mets_VAR_infl$MSE,
