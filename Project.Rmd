@@ -915,15 +915,13 @@ visualise_VAR(
 # Wrapper for GDP-only metrics
 output_gdp <- list(
   mean      = list(yp_out = jags_output_VAR$mean$yp_out_gdp, train_metrics_skip=jags_output_VAR$mean$train_metrics_skip),
-  sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_gdp),
-  DIC_gpd       = compute_dic_marginal(jags_output_VAR$sims.list$loglik_gdp)
+  sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_gdp)
 )
 
 # Wrapper for CPI-only metrics
 output_infl <- list(
   mean      = list(yp_out = jags_output_VAR$mean$yp_out_infl, train_metrics_skip=jags_output_VAR$mean$train_metrics_skip),
-  sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_infl),
-  DIC_cpi      = compute_dic_marginal(jags_output_VAR$sims.list$loglik_infl)
+  sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_infl)
 )
 
 
@@ -935,7 +933,7 @@ metrics_df_GDP <- rbind(
   metrics_df_GDP,
   data.frame(
     Model = paste0("VAR_univar_GDP(", order, ")"),
-    DIC   = output_gdp$DIC_gpd,
+    DIC   = mets_VAR_gdp$DIC,
     WAIC  = mets_VAR_gdp$WAIC,
     BIC   = mets_VAR_gdp$BIC,
     MSE   = mets_VAR_gdp$MSE,
@@ -951,7 +949,7 @@ metrics_df_CPI <- rbind(
   metrics_df_CPI,
   data.frame(
     Model = paste0("VAR_univar_CPI(", order, ")"),
-    DIC   = output_infl$DIC_cpi,
+    DIC   = mets_VAR_infl$DIC,
     WAIC  = mets_VAR_infl$WAIC,
     BIC   = mets_VAR_infl$BIC,
     MSE   = mets_VAR_infl$MSE,
