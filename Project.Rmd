@@ -352,7 +352,7 @@ y(t) = \alpha \eta(t-1) + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
 $$
 
 ```{r}
-modelMA_string <- "
+modelMA_string_legacy <- "
 model {
   ############################################################
   ######################## LIKELIHOOD ########################
@@ -406,7 +406,7 @@ model {
 ```
 
 ```{r}
-modelMA_string_predictor <- "
+modelMA_string_predictor_legacy <- "
 model {
   ############################################################
   ######################## LIKELIHOOD ########################
@@ -469,6 +469,56 @@ model {
 }"
 ```
 
+```{r}
+modelMA_string <- "
+model {
+
+  ############################################################
+  ######################## LIKELIHOOD ########################
+  ############################################################
+
+  e[1:order] = rep(0, order)
+  yp_in[1:order]  <- y[1:order]
+  
+  # 2. Recursive step of the MA process
+  for (t in (order+1):N_train) {
+    mu[t]    <- m0 + inprod(beta_rev, e[(t-order):(t-1)])
+    y[t]      ~ dnorm(mu[t], tau)
+    yp_in[t]  ~ dnorm(mu[t], tau)
+    e[t]     <- y[t] - mu[t]
+  }
+
+  for (t in (train_metrics_skip+1):N_train) {
+    loglik[t-train_metrics_skip] <- logdensity.norm(y[t], mu[t], tau)
+  }
+  
+  ############################################################
+  ######################## PREDICTION ########################
+  ############################################################
+
+  for (t in 1:N_test) {
+    e[N_train+t] ~ dnorm(0, tau)
+    mu_out[t]   <- m0 + inprod(beta_rev, e[(N_train+t-order):(N_train+t-1)])
+    yp_out[t]    ~ dnorm(mu_out[t], tau)
+  }
+  
+  ############################################################
+  ########################## PRIOR ###########################
+  ############################################################
+  
+  m0    ~ dnorm(0.0, 1.0E-4)
+  tau   ~ dgamma(0.01, 0.01)
+
+  for (i in 1:order){
+    beta[i]      ~ dunif(-1.1, 1.1)
+    beta_rev[i] <- beta[order-i+1]
+  }
+  
+  # Defining converstion from precision to variance here
+  sigma2 <- 1 / tau
+}"
+```
+
 The following model will merge the two previous models defining an $ARMA(1, 1)$ model.
 
 $$
@@ -478,7 +528,7 @@ $$
 The choice for the auto-regressive part is a result of the analysis of the performance of $AR(n)$ models with $n > 1$ which seemed to indicate that a shallower memory was better.
 
 ```{r}
-modelARMA_string <- "
+modelARMA_string_legacy <- "
 model {
   ############################################################
   ######################## LIKELIHOOD ########################
@@ -529,6 +579,97 @@ model {
   
   # Defining converstion from precision to variance here
   sigma2 <- 1 / tau
+}
+"
+```
+
+```{r}
+modelARMA_string <- "
+model {
+
+  # order = max(order_ar, order_ma)
+  
+  ############################################################
+  ######################## LIKELIHOOD ########################
+  ############################################################
+
+  e[1:order]     <- rep(0, order)
+  mu[1:order]    <- y[1:order]
+  yp_in[1:order] <- y[1:order]
+  
+  # 2. Recursive step of the MA process
+  for (t in (order+1):N_train) {
+    mu_ar[t] <- inprod(alpha_rev, y[(t-order):(t-1)])
+    mu_ma[t] <- inprod(beta_rev, e[(t-order):(t-1)])
+    mu[t]    <- m0 + mu_ar[t] + mu_ma[t]
+    y[t]      ~ dnorm(mu[t], tau)
+    yp_in[t]  ~ dnorm(mu[t], tau)
+    e[t]     <- y[t] - mu[t]
+  }
+
+  for (t in (train_metrics_skip+1):N_train) {
+    loglik[t-train_metrics_skip] <- logdensity.norm(y[t], mu[t], tau)
+  }
+  
+  ############################################################
+  ######################## PREDICTION ########################
+  ############################################################
+
+  z[1:order]   <- y[(N_train-order+1):N_train]
+  e_z[1:order] <- e[(N_train-order+1):N_train]
+
+  for (t in (order+1):(order+N_test)) {
+    e_z[t]        ~ dnorm(0, tau)
+    mu_ar_out[t] <- inprod(alpha_rev, z[(t-order):(t-1)])
+    mu_ma_out[t] <- inprod(beta_rev, e_z[(t-order):(t-1)])
+    mu_z[t]      <- m0 + mu_ar_out[t] + mu_ma_out[t]
+    z[t]          ~ dnorm(mu_z[t], tau)
+  }
+
+  yp_out <- z[(order+1):(order+N_test)]
+  
+  ############################################################
+  ########################## PRIOR ###########################
+  ############################################################
+  
+  m0    ~ dnorm(0.0, 1.0E-4)
+  tau   ~ dgamma(0.01, 0.01)
+
+  # for (i in 1:order) {
+  #   alpha[i]      ~ dunif(-1.1, 1.1)
+  #   alpha_rev[i] <- alpha[order-i+1]
+  #   
+  #   # beta[i]      ~ dunif(-1.1, 1.1)
+  #   # beta_rev[i] <- beta[order-i+1]
+  # }
+  
+  for (i in 1:order_ar) {
+    alpha[i] ~ dunif(-1.1, 1.1)
+  }
+  for (i in (order_ar+1):order) {
+    # beta[i]      ~ dnorm(0, 10000)
+    alpha[i]      <- 0
+  }
+  
+  for (i in 1:order) {
+    alpha_rev[i] <- alpha[order-i+1]
+  }
+
+  for (i in 1:order_ma) {
+    beta[i] ~ dunif(-1.1, 1.1)
+  }
+  for (i in (order_ma+1):order) {
+    # beta[i]      ~ dnorm(0, 10000)
+    beta[i]      <- 0
+  }
+  
+  for (i in 1:order) {
+    beta_rev[i] <- beta[order-i+1]
+  }
+  
+  # Defining converstion from precision to variance here
+  sigma2 <- 1 / tau
+  
 }
 "
 ```
@@ -648,45 +789,57 @@ to_save <- c(
   "train_metrics_skip",
   "loglik"
 )
-data_list <- list(
-  "y"=series_GDP,
-  "N_train"=N_train,
-  "N_test"=N_test,
-  "train_metrics_skip"=50
-)
 
-# Perform simulations and visualise output
-output <- fit_JAGS(
-  modelMA_string_predictor,
-  data_list,
-  to_save
-)
+# Creating placeholder to store outputs
+o <- list()
 
-visualise(x_axis, series_GDP, output, title="GDP series, MA(1)")
-
-mets <- compute_metrics(output, series_GDP, N_train, k=3)
-metrics_df_GDP <- rbind(
-  metrics_df_GDP,
-  data.frame(
-    Model = "MA(1)",
-    DIC   = mets$DIC,
-    WAIC  = mets$WAIC,
-    BIC   = mets$BIC,
-    MSE   = mets$MSE,
-    MAE   = mets$MAE,
-    MAPE  = mets$MAPE,
-    SMAPE = mets$SMAPE,
-    MASE  = mets$MASE,
-    stringsAsFactors = FALSE
+# Trying our AR(n) from n=1 to max_order
+max_order <- 5
+for (order in 1:max_order) {
+  data_list <- list(
+    "y"=series_GDP,
+    "order"=order,
+    "N_train"=N_train,
+    "N_test"=N_test,
+    "train_metrics_skip"=50
   )
-)
+  
+  # Perform simulations and visualise output
+  output <- fit_JAGS(
+    modelMA_string,
+    data_list,
+    to_save
+  )
+  visualise(x_axis, series_GDP, output, title=glue("GDP series, MA({order})"))
+  
+  if (order == 1) {
+    o = output
+  }
+  
+  mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
+  metrics_df_GDP <- rbind(
+    metrics_df_GDP,
+    data.frame(
+      Model = paste0("MA(",order,")"),
+      DIC   = mets$DIC,
+      WAIC  = mets$WAIC,
+      BIC   = mets$BIC,
+      MSE   = mets$MSE,
+      MAE   = mets$MAE,
+      MAPE  = mets$MAPE,
+      SMAPE = mets$SMAPE,
+      MASE  = mets$MASE,
+      stringsAsFactors = FALSE
+    )
+  )
+}
 ```
 
 ```{r}
 # Inspecting results
 parameters <- c("beta", "m0")
-mcmc_trace(output$samples, pars=parameters)
-mcmc_areas(output$samples, pars=parameters, prob=0.95)
+mcmc_trace(o$samples, pars=parameters)
+mcmc_areas(o$samples, pars=parameters, prob=0.95)
 
 print(output)
 ```
@@ -702,39 +855,55 @@ to_save <- c(
   "train_metrics_skip",
   "loglik"
 )
-data_list <- list(
-  "y"=series_GDP,
-  "N_train"=N_train,
-  "N_test"=N_test,
-  "train_metrics_skip"=50
-)
 
-# Perform simulations and visualise output
-output <- fit_JAGS(
-  modelARMA_string,
-  data_list,
-  to_save
-)
+# Creating placeholder to store outputs
+o <- list()
 
-visualise(x_axis, series_GDP, output, title="GDP series, ARMA(1, 1)")
-
-mets <- compute_metrics(output, series_GDP, N_train, k=2+2)
-
-metrics_df_GDP <- rbind(
-  metrics_df_GDP,
-  data.frame(
-    Model = "ARMA(1,1)",
-    DIC   = mets$DIC,
-    WAIC  = mets$WAIC,
-    BIC   = mets$BIC,
-    MSE   = mets$MSE,
-    MAE   = mets$MAE,
-    MAPE  = mets$MAPE,
-    SMAPE = mets$SMAPE,
-    MASE  = mets$MASE,
-    stringsAsFactors = FALSE
-  )
-)
+# Trying our AR(n) from n=1 to max_order
+max_order_ar <- 5
+max_order_ma <- 2
+for (order_ma in 1:max_order_ma) {
+  for (order_ar in 1:max_order_ar) {
+    data_list <- list(
+      "y"=series_GDP,
+      "N_train"=N_train,
+      "N_test"=N_test,
+      "order"=max(order_ar, order_ma),
+      "order_ar"=order_ar,
+      "order_ma"=order_ma,
+      "train_metrics_skip"=50
+    )
+    
+    # Perform simulations and visualise output
+    output <- fit_JAGS(
+      modelMA_string,
+      data_list,
+      to_save
+    )
+    visualise(x_axis, series_GDP, output, title=glue("GDP series, ARMA({order_ar}, {order_ma})"))
+    
+    if (order == 1) {
+      o = output
+    }
+    
+    mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
+    metrics_df_GDP <- rbind(
+      metrics_df_GDP,
+      data.frame(
+        Model = glue("ARMA({order_ar}, {order_ma})"),
+        DIC   = mets$DIC,
+        WAIC  = mets$WAIC,
+        BIC   = mets$BIC,
+        MSE   = mets$MSE,
+        MAE   = mets$MAE,
+        MAPE  = mets$MAPE,
+        SMAPE = mets$SMAPE,
+        MASE  = mets$MASE,
+        stringsAsFactors = FALSE
+      )
+    )
+  }
+}
 ```
 ## VAR
 
