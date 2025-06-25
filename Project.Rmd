@@ -364,8 +364,7 @@ compute_dic_marginal <- function(ll_mat) {
   dev      <- -2 * ll_mat
   dev_sum  <- rowSums(dev)
   Dbar     <- mean(dev_sum)
-  Dhat     <- sum(-2 * colMeans(ll_mat))
-  pD       <- Dbar - Dhat
+  pD       <- 0.5 * var(dev_sum)
   DIC      <- Dbar + pD
   return(DIC)
 }
