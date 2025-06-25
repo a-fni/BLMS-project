@@ -14,7 +14,9 @@ library(loo)
 library(knitr)
 ```
 
-## Bayesian Learning & Monte-Carlo Simulation final project
+# Bayesian Learning & Monte-Carlo Simulation final project
+
+## Introduction
 
 Setting up environment, importing the dataset and visualising a graph of the two time series we will have to fit.
 
@@ -195,6 +197,103 @@ visualise <- function(
   lines(x_axis[(in_length+1):N],  yp_out_q2,   col="orange", lwd=1.5)
   lines(x_axis[(in_length+1):N],  yp_out_q3,   col="orange", lwd=1.5, lty=2)
   lines(x_axis[(in_length+1):N],  yp_out_q4,   col="orange", lwd=1.5, lty=2)
+}
+```
+
+```{r}
+# Function in charge of visualising the anomaly points on top of its corresponding time series
+visualise_anomalies <- function(
+  x_axis,             # X-axis to use for the plot
+  original_series,    # Original time series to display
+  high_var_indices,   # List of indices corresponding to high variance points
+  med_var_indices,    # List of indices corresponding to medium variance points
+  title="",           # Name of the time series used
+  start_point=1       # Value after which plotting should start (in order to obtain close up graphs)
+) {
+  # Plot actual time series
+  N <- length(x_axis)
+  plot(
+    x_axis[start:N],
+    original_series[start:N],
+    main=glue("Anomalies for {title}"),
+    t="l", xlab="time", ylab="price"
+  )
+
+  # Plotting strong anomaly points
+  points(x_axis[high_var_indices], original_series[high_var_indices], col="red")
+  for (high_anomaly in high_var_indices) {
+    abline(v=x_axis[high_anomaly], col="red", lwd=1.5)
+  }
+  
+  # Plotting medium anomaly points
+  points(x_axis[med_var_indices], original_series[med_var_indices], col="orange")
+  for (medium_anomaly in med_var_indices) {
+    abline(v=x_axis[medium_anomaly], col="orange", lty=3, lwd=1.5)
+  }
+}
+```
+
+```{r}
+# Function in charge of classifying anomaly points given their delta value after running the anomaly detection simulation
+classify_anomalies <- function(
+  output,             # JAGS simulation output
+  N_tot,              # Total number of samples
+  title="",           # Name of time series to display
+  high_value_thr=0.2, # High variance threshold value used
+  med_value_thr=0.60  # Medium variance threshold value used
+) {
+  # Obtaining precision, variance and delta
+  tau     <- output$mean$tau
+  sigma2  <- 1 / tau
+  delta   <- output$mean$d
+  
+  # Classifying the values of d
+  high_var_indices  <- seq(1:(N_tot-1))[delta < high_value_thr]
+  med_var_indices   <- seq(1:(N_tot-1))[high_value_thr < delta & delta < med_value_thr]
+  low_var_indices   <- seq(1:(N_tot-1))[delta > med_value_thr]
+  
+  # Logging counts
+  n_high  <- length(high_var_indices)
+  n_med   <- length(med_var_indices)
+  print(
+    glue("Found {n_high} strong and {n_med} medium outliers out {N_tot} total samples for {title}")
+  )
+  
+  # Returning the indices
+  return(list(
+    high_var_indices = high_var_indices,
+    med_var_indices  = med_var_indices,
+    low_var_indices  = low_var_indices
+  ))
+}
+```
+
+```{r}
+# Function in charge of plotting the anomaly point delta values with their relative threshold lines
+display_classification <- function(
+  x_axis,             # X-axis to use for the plot
+  delta,              # Sequence of delta values
+  high_var_indices,   # List of indices corresponding to high variance points
+  med_var_indices,    # List of indices corresponding to medium variance points
+  low_var_indices,    # List of indices corresponding to low variance points
+  title="",           # Name of the time series used
+  high_value_thr=0.2, # High variance threshold value used
+  med_value_thr=0.60  # Medium variance threshold value used
+) {
+  # Plotting the posterior values of delta and classifying them
+  plot(
+    x_axis[low_var_indices], delta[low_var_indices],
+    xlab="time",
+    ylab="Posterior delta values",
+    main=glue("{title} anomaly samples"),
+    xlim=c(min(x_axis), max(x_axis)),
+    ylim=c(0, 1)
+  )
+  
+  points(x_axis[high_var_indices], delta[high_var_indices], col="red")
+  points(x_axis[med_var_indices], delta[med_var_indices]  , col="orange")
+  abline(h=high_value_thr, col="red")
+  abline(h=med_value_thr, col="orange")
 }
 ```
 
@@ -905,6 +1004,7 @@ for (order_ma in 1:max_order_ma) {
   }
 }
 ```
+
 ## VAR
 
 Finally, we will to fit generic order VAR(n) models
@@ -944,6 +1044,7 @@ model {
     loglik_infl[t-train_metrics_skip] <- logdensity.norm(y[2,t], mu[2,t], 1 / sigma2[2,2])
   }
 
+
   ############################################################
   ######################## PREDICTION ########################
   ############################################################
@@ -959,6 +1060,7 @@ model {
   }
   
   yp_out[1:2,1:N_test] = z[1:2,(order+1):(order+N_test)]
+  
   
   ############################################################
   ########################## PRIOR ###########################
@@ -979,6 +1081,7 @@ model {
   m0     <- c(m_gdp, m_infl)
   
   sigma2 <- inverse(tau)
+  
   
   ############################################################
   ######################## EXTRACTION ########################
@@ -1250,6 +1353,184 @@ plot(1:max_order, metrics_df_GDP_AR[1:max_order,9], type="l", main="MASE")
 
 ```
 
+## Anomaly detection
 
+In this last section we will examine anomalies and outliers which are present in our two time series. So far, we performed model selection and predictions of future values for the series, however we could clearly see that both the training and test set presented samples which deviated quite heavily from their neighbouring values. This can be cause of disturbances during the learning phase and also a reduced accuracu during forecasting.
 
+The objective of this section is to detect said outliers and visualise them so as to clearly show which samples may be problematic during fitting and out-of-sample prediction.
 
+In order to do this, for each timestamp $t$, we consider the incremental values of our series, each of which is to be treated as an independent random variable:
+
+$$
+\Delta_t := y_{t} - y_{t-1} \stackrel{iid}{\sim} \mathcal{N}(\mu, \sigma_t^2)
+$$
+
+In order to be able to perform anomaly detection, we must ensure that the sequence of incremental values $\Delta_t$ can be approximated to a random walk. This can be verified by trying to fit an $AR(1)$ process to the initial sequence of values $y_t$ and checking whether the value $|\alpha|$ is close to 1:
+
+```{r}
+# Data lists for both delta-series
+data_list_GDP <- list(
+  "y"=series_GDP,
+  "train_metrics_skip"=50,
+  "order"=1,
+  "N_train"=N_tot,
+  "N_test"=1          # No need to perform forecasting
+)
+data_list_CPI <- list(
+  "y"=series_CPI,
+  "train_metrics_skip"=50,
+  "order"=1,
+  "N_train"=N_tot,
+  "N_test"=1          # No need to perform forecasting
+)
+
+# Only need to inspect value of alpha for both series
+to_save <- c(
+  "alpha"
+)
+
+# Fit AR(1) models
+output_GDP <- fit_JAGS(
+  modelAR_string,
+  data_list_GDP,
+  to_save
+)
+output_CPI <- fit_JAGS(
+  modelAR_string,
+  data_list_CPI,
+  to_save
+)
+
+# Inspecting values of alpha
+print(glue("Alpha value for GDP has posterior mean {output_GDP$mean$alpha} with standard deviation of {output_GDP$sd$alpha}"))
+print(glue("Alpha value for CPI has posterior mean {output_CPI$mean$alpha} with standard deviation of {output_CPI$sd$alpha}"))
+```
+
+Now that we know that the two series can be approximated reasonably well to random walks ($\alpha_{GDP} = 0.86$ and $\alpha_{CPI} = 0.938$) we proceede with our anomaly detection.
+
+Notice that the random variable $\Delta_t$ has a fixed mean value $\mu$, but a time dependant variance $\sigma_t^2$, which we model as:
+
+$$
+\sigma_t^{-2} = \tau_t = \beta_1 + \beta_2 \delta_t \qquad \delta_t \sim Ber(p)
+$$
+
+We can, therefore, define the following JAGS model-string which will fit the individual values of $\delta_t$.
+
+```{r}
+anomaly_detection_string <- "
+model {
+
+  ############################################################
+  ######################## LIKELIHOOD ########################
+  ############################################################
+
+  for(t in 1:N_tot) {
+    delta[t]  ~  dnorm(mu, tau[t])
+    tau[t]    <- beta[1] + beta[2] * d[t]
+  }
+  
+  
+  ############################################################
+  ########################## PRIOR ###########################
+  ############################################################
+  
+  # Beta coefficients, Bernoulli probability and mean
+  beta[1] ~ dexp(0.1)
+  beta[2] ~ dexp(0.1)
+  p       ~ dbeta(1, 1)
+  mu      ~ dnorm(0, 0.01)
+  
+  # Delta value
+  for(t in 1:N_tot){
+    d[t] ~ dbern(p)
+  }
+}"
+```
+
+```{r}
+# Obtaining series of differences
+delta_GDP <- series_GDP[2:N_tot] - series_GDP[1:(N_tot-1)]
+delta_CPI <- series_CPI[2:N_tot] - series_CPI[1:(N_tot-1)]
+
+# Setting up parameters for JAGS
+data_list_GDP <- list(
+  "delta"=delta_GDP,
+  "N_tot"=N_tot-1
+)
+data_list_CPI <- list(
+  "delta"=delta_CPI,
+  "N_tot"=N_tot-1
+)
+to_save <- c(
+  "d",
+  "mu",
+  "tau"
+)
+
+# Perform simulations
+anomaly_output_GDP <- fit_JAGS(
+  anomaly_detection_string,
+  data_list_GDP,
+  to_save,
+  n_iter=10000
+)
+anomaly_output_CPI <- fit_JAGS(
+  anomaly_detection_string,
+  data_list_CPI,
+  to_save,
+  n_iter=10000
+)
+```
+
+Once obtained both $\{\delta_t\}_{t=1...N}$ sequences we can classify their values according to their expected values. Concretely, we classify a timestamp $t$ such that $\mathbb{E}[\delta_t] < 0.2$ as *"high variance"* (where strong oscillations may occur) and timestamps $t$ with $0.2 < \mathbb{E}[\delta_t] < 0.6$ as samples with *"medium variance"* (where we still might have an anomaly, but of weaker nature). All remaining samples can be considered stable and only subject to natural stochastic oscillations.
+
+```{r}
+# Classifying anomalies for both series
+anomalies_GDP <- classify_anomalies(anomaly_output_GDP, N_tot, title="GDP")
+anomalies_CPI <- classify_anomalies(anomaly_output_CPI, N_tot, title="CPI")
+
+# Displaying graphically the classification
+delta_GDP <- anomaly_output_GDP$mean$d
+delta_CPI <- anomaly_output_CPI$mean$d
+
+display_classification(
+  x_axis,
+  delta_GDP,
+  anomalies_GDP$high_var_indices,
+  anomalies_GDP$med_var_indices,
+  anomalies_GDP$low_var_indices,
+  title="GDP"
+)
+display_classification(
+  x_axis,
+  delta_CPI,
+  anomalies_CPI$high_var_indices,
+  anomalies_CPI$med_var_indices,
+  anomalies_CPI$low_var_indices,
+  title="CPI"
+)
+```
+
+Finally, we can plot both our time series displaying the points in time where high variances were observed: red vertical lines display timestamps where strong anomalies were detected, while orange dotted lines show medium anomalies.
+
+```{r}
+# Zoom value: we only plot starting from this point on so as not to clog up the graph
+start <- 150
+
+visualise_anomalies(
+  x_axis,
+  series_GDP,
+  anomalies_GDP$high_var_indices,
+  anomalies_GDP$med_var_indices,
+  title="GDP",
+  start=start
+)
+visualise_anomalies(
+  x_axis,
+  series_CPI,
+  anomalies_CPI$high_var_indices,
+  anomalies_CPI$med_var_indices,
+  title="CPI",
+  start=start
+)
+```
