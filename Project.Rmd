@@ -12,6 +12,7 @@ library(jagsUI)
 library(glue)
 library(loo)
 library(knitr)
+library(kableExtra)
 ```
 
 # Bayesian Learning & Monte-Carlo Simulation final project
@@ -891,7 +892,7 @@ to_save <- c(
 # Creating placeholder to store outputs
 o <- list()
 
-# Trying our AR(n) from n=1 to max_order
+# Trying our MA(n) from n=1 to max_order
 max_order <- 5
 for (order in 1:max_order) {
   data_list <- list(
@@ -958,8 +959,8 @@ to_save <- c(
 o <- list()
 
 # Trying our AR(n) from n=1 to max_order
-max_order_ar <- 5
-max_order_ma <- 2
+max_order_ar <- 3
+max_order_ma <- 3
 for (order_ma in 1:max_order_ma) {
   for (order_ar in 1:max_order_ar) {
     data_list <- list(
@@ -974,7 +975,7 @@ for (order_ma in 1:max_order_ma) {
     
     # Perform simulations and visualise output
     output <- fit_JAGS(
-      modelMA_string,
+      modelARMA_string,
       data_list,
       to_save
     )
@@ -1139,7 +1140,7 @@ visualise_VAR = function(
 R = matrix(c(1, 0, 0, 1), nrow=2, byrow=TRUE)
 y = matrix(c(series_GDP, series_CPI), nrow=2, byrow=TRUE)
 
-order=10
+order=3
 
 to_save <- c(
   "A",
@@ -1243,16 +1244,22 @@ kable(
   digits  = c(1,1,1,1,3,3,1,1,3),
   format  = "html",
   table.attr = 'cellpadding="10" cellspacing="0"'
-)
+) %>%
+  kable_styling(full_width = F, position = "center") %>%
+  row_spec(0, background = "#000000", color = "#FFFFFF") %>%  # intestazione
+  row_spec(1:nrow(metrics_df_GDP), background = "#000000", color = "#FFFFFF")  # righe dati
 
-# CPI table
+# Tabella CPI
 kable(
   metrics_df_CPI,
   caption = "Univariate model metrics — CPI series",
   digits  = c(1,1,1,1,3,3,1,1,3),
   format  = "html",
   table.attr = 'cellpadding="10" cellspacing="0"'
-)
+) %>%
+  kable_styling(full_width = F, position = "center") %>%
+  row_spec(0, background = "#000000", color = "#FFFFFF") %>%
+  row_spec(1:nrow(metrics_df_CPI), background = "#000000", color = "#FFFFFF")
 ```
 
 PAY ATTENTION:
@@ -1291,7 +1298,7 @@ to_save <- c(
 o <- list()
 
 # Trying our AR(n) from n=1 to max_order
-max_order <- 5
+max_order <- 9
 for (order in 1:max_order) {
   
   data_list <- list(
@@ -1352,9 +1359,271 @@ plot(1:max_order, metrics_df_GDP_AR[1:max_order,9], type="l", main="MASE")
 
 ```
 
+## MA order selection
+
+```{r}
+# Metrics Dataframe for MA
+metrics_df_GDP_MA <- data.frame(
+  Model = character(),
+  DIC   = numeric(),
+  WAIC  = numeric(),
+  BIC   = numeric(),
+  MSE   = numeric(),
+  MAE   = numeric(),
+  MAPE  = numeric(),
+  SMAPE = numeric(),
+  MASE  = numeric(),
+  stringsAsFactors = FALSE
+)
+
+to_save <- c(
+  "beta",
+  "m0",
+  "sigma2",
+  "yp_in",
+  "yp_out",
+  "train_metrics_skip",
+  "loglik"
+)
+
+# Creating placeholder to store outputs
+o_ma <- list()
+
+# Trying our MA(n) from n=1 to max_order
+max_order_ma <- 5
+for (order in 1:max_order_ma) {
+  
+  data_list <- list(
+    "y"=series_GDP,
+    "order"=order,
+    "N_train"=N_train,
+    "N_test"=N_test,
+    "train_metrics_skip"=50
+  )
+  
+  # Perform simulations and visualise output
+  output <- fit_JAGS(
+    modelMA_string,
+    data_list,
+    to_save
+  )
+  visualise(x_axis, series_GDP, output, title=glue("GDP series, MA({order})"))
+  
+  if (order == 1) {
+    o_ma = output
+  }
+  
+  mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
+  metrics_df_GDP_MA <- rbind(
+    metrics_df_GDP_MA,
+    data.frame(
+      Model = paste0("MA(",order,")"),
+      DIC   = mets$DIC,
+      WAIC  = mets$WAIC,
+      BIC   = mets$BIC,
+      MSE   = mets$MSE,
+      MAE   = mets$MAE,
+      MAPE  = mets$MAPE,
+      SMAPE = mets$SMAPE,
+      MASE  = mets$MASE,
+      stringsAsFactors = FALSE
+    )
+  )
+}
+```
+
+```{r}
+
+# saveRDS(metrics_df_GDP_MA, file = "metrics_df_GDP_MA.rds")
+
+```
+
+```{r}
+
+plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,2], type="l", main="MA - DIC")
+plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,3], type="l", main="MA - WAIC")
+plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,4], type="l", main="MA - BIC")
+plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,5], type="l", main="MA - MSE")
+plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,6], type="l", main="MA - MAE")
+plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,7], type="l", main="MA - MAPE")
+plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,8], type="l", main="MA - SMAPE")
+plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,9], type="l", main="MA - MASE")
+
+```
+
+## ARMA order selection
+
+```{r}
+# Metrics Dataframe for ARMA
+metrics_df_GDP_ARMA <- data.frame(
+  Model = character(),
+  DIC   = numeric(),
+  WAIC  = numeric(),
+  BIC   = numeric(),
+  MSE   = numeric(),
+  MAE   = numeric(),
+  MAPE  = numeric(),
+  SMAPE = numeric(),
+  MASE  = numeric(),
+  stringsAsFactors = FALSE
+)
+
+to_save <- c(
+  "alpha",
+  "beta",
+  "m0",
+  "sigma2",
+  "yp_in",
+  "yp_out",
+  "train_metrics_skip",
+  "loglik"
+)
+
+# Creating placeholder to store outputs
+o_arma <- list()
+
+# Trying ARMA(p,q) models
+max_order_ar_arma <- 3
+max_order_ma_arma <- 3
+for (order_ar in 1:max_order_ar_arma) {
+  for (order_ma in 1:max_order_ma_arma) {
+    
+    data_list <- list(
+      "y"=series_GDP,
+      "N_train"=N_train,
+      "N_test"=N_test,
+      "order"=max(order_ar, order_ma),
+      "order_ar"=order_ar,
+      "order_ma"=order_ma,
+      "train_metrics_skip"=50
+    )
+    
+    # Perform simulations and visualise output
+    output <- fit_JAGS(
+      modelARMA_string,
+      data_list,
+      to_save
+    )
+    visualise(x_axis, series_GDP, output, title=glue("GDP series, ARMA({order_ar}, {order_ma})"))
+    
+    if (order_ar == 1 && order_ma == 1) {
+      o_arma = output
+    }
+    
+    # Number of parameters: order_ar + order_ma + m0 + sigma2
+    mets <- compute_metrics(output, series_GDP, N_train, k=order_ar+order_ma+2)
+    metrics_df_GDP_ARMA <- rbind(
+      metrics_df_GDP_ARMA,
+      data.frame(
+        Model = glue("ARMA({order_ar}, {order_ma})"),
+        DIC   = mets$DIC,
+        WAIC  = mets$WAIC,
+        BIC   = mets$BIC,
+        MSE   = mets$MSE,
+        MAE   = mets$MAE,
+        MAPE  = mets$MAPE,
+        SMAPE = mets$SMAPE,
+        MASE  = mets$MASE,
+        stringsAsFactors = FALSE
+      )
+    )
+  }
+}
+```
+
+```{r}
+
+# saveRDS(metrics_df_GDP_ARMA, file = "metrics_df_GDP_ARMA.rds")
+
+```
+
+```{r}
+
+# Create matrices for heatmap visualization
+create_metric_matrix <- function(df, metric_col) {
+  metric_matrix <- matrix(NA, nrow=max_order_ar_arma, ncol=max_order_ma_arma)
+  
+  for (i in 1:nrow(df)) {
+    model_name <- df$Model[i]
+    # Extract p and q from ARMA(p, q)
+    parts <- regmatches(model_name, regexpr("\\((\\d+), (\\d+)\\)", model_name))
+    if (length(parts) > 0) {
+      nums <- regmatches(parts, gregexpr("\\d+", parts))[[1]]
+      p <- as.numeric(nums[1])
+      q <- as.numeric(nums[2])
+      metric_matrix[p, q] <- df[i, metric_col]
+    }
+  }
+  
+  return(metric_matrix)
+}
+
+# Create heatmaps for different metrics
+par(mfrow=c(2,4))
+
+# DIC
+dic_matrix <- create_metric_matrix(metrics_df_GDP_ARMA, "DIC")
+image(1:max_order_ar_arma, 1:max_order_ma_arma, dic_matrix, 
+      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - DIC",
+      col=heat.colors(20))
+contour(1:max_order_ar_arma, 1:max_order_ma_arma, dic_matrix, add=TRUE)
+
+# WAIC
+waic_matrix <- create_metric_matrix(metrics_df_GDP_ARMA, "WAIC")
+image(1:max_order_ar_arma, 1:max_order_ma_arma, waic_matrix, 
+      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - WAIC",
+      col=heat.colors(20))
+contour(1:max_order_ar_arma, 1:max_order_ma_arma, waic_matrix, add=TRUE)
+
+# BIC
+bic_matrix <- create_metric_matrix(metrics_df_GDP_ARMA, "BIC")
+image(1:max_order_ar_arma, 1:max_order_ma_arma, bic_matrix, 
+      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - BIC",
+      col=heat.colors(20))
+contour(1:max_order_ar_arma, 1:max_order_ma_arma, bic_matrix, add=TRUE)
+
+# MSE
+mse_matrix <- create_metric_matrix(metrics_df_GDP_ARMA, "MSE")
+image(1:max_order_ar_arma, 1:max_order_ma_arma, mse_matrix, 
+      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - MSE",
+      col=heat.colors(20))
+contour(1:max_order_ar_arma, 1:max_order_ma_arma, mse_matrix, add=TRUE)
+
+# MAE
+mae_matrix <- create_metric_matrix(metrics_df_GDP_ARMA, "MAE")
+image(1:max_order_ar_arma, 1:max_order_ma_arma, mae_matrix, 
+      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - MAE",
+      col=heat.colors(20))
+contour(1:max_order_ar_arma, 1:max_order_ma_arma, mae_matrix, add=TRUE)
+
+# MAPE
+mape_matrix <- create_metric_matrix(metrics_df_GDP_ARMA, "MAPE")
+image(1:max_order_ar_arma, 1:max_order_ma_arma, mape_matrix, 
+      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - MAPE",
+      col=heat.colors(20))
+contour(1:max_order_ar_arma, 1:max_order_ma_arma, mape_matrix, add=TRUE)
+
+# SMAPE
+smape_matrix <- create_metric_matrix(metrics_df_GDP_ARMA, "SMAPE")
+image(1:max_order_ar_arma, 1:max_order_ma_arma, smape_matrix, 
+      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - SMAPE",
+      col=heat.colors(20))
+contour(1:max_order_ar_arma, 1:max_order_ma_arma, smape_matrix, add=TRUE)
+
+# MASE
+mase_matrix <- create_metric_matrix(metrics_df_GDP_ARMA, "MASE")
+image(1:max_order_ar_arma, 1:max_order_ma_arma, mase_matrix, 
+      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - MASE",
+      col=heat.colors(20))
+contour(1:max_order_ar_arma, 1:max_order_ma_arma, mase_matrix, add=TRUE)
+
+par(mfrow=c(1,1))
+
+```
+
 ## Anomaly detection
 
-In this last section we will examine anomalies and outliers which are present in our two time series. So far, we performed model selection and predictions of future values for the series, however we could clearly see that both the training and test set presented samples which deviated quite heavily from their neighbouring values. This can be cause of disturbances during the learning phase and also a reduced accuracu during forecasting.
+In this last section we will examine anomalies and outliers which are present in our two time series. So far, we performed model selection and predictions of future values for the series, however we could clearly see that both the training and test set presented samples which deviated quite heavily from their neighboring values. This can be cause of disturbances during the learning phase and also a reduced accuracy during forecasting.
 
 The objective of this section is to detect said outliers and visualise them so as to clearly show which samples may be problematic during fitting and out-of-sample prediction.
 
