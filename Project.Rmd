@@ -843,6 +843,25 @@ $$
 Where $\Sigma$ is the covariance matrix of our white noise (now an $\mathbb{R}^2$ vector) and $\vec{y}(t) \in \mathbb{R}^2$ now contains both the GDP and CPI time series, which will be modelled together in a correlated fashion. By passing the parameter `order` during simulation we can specify the auto-regressive order $n$ of the multivariate process.
 
 ```{r}
+
+prior_wishart <- "
+  # Wishart prior for a full covariance matrix
+  R[1,1] <- 1
+  R[2,2] <- 1
+  R[1,2] <- 0
+  R[2,1] <- 0
+  tau ~ dwish(R, 3) # df=3 is the minimum for a 2x2 matrix
+"
+
+# Prior fragment for independent Gamma distributions (diagonal covariance)
+prior_gamma <- "
+  # Independent Gamma priors for diagonal precision matrix
+  tau[1,1] ~ dgamma(0.01, 0.01)
+  tau[2,2] ~ dgamma(0.01, 0.01)
+  tau[1,2] <- 0 
+  tau[2,1] <- 0
+"
+
 modelVAR_string = "
 model {
 
@@ -861,22 +880,12 @@ model {
     mu[1:2,t]   <- mu_tmp[1:2,t,order+1]
     y[1:2,t]     ~ dmnorm(mu[1:2,t], tau)
     yp_in[1:2,t] ~ dmnorm(mu[1:2,t], tau)
-
-    # Compute univariate log-likelihood
-    # loglik_gdp[t]  <- logdensity.norm(y[1,t], mu[1,t], 1 / sigma2[1,1])
-    # loglik_infl[t] <- logdensity.norm(y[2,t], mu[2,t], 1 / sigma2[2,2])
   }
-  
-  # for (t in 1:order) {
-  #   loglik_gdp[t]  <- logdensity.norm(y[1,t], mu[1,t], 1 / sigma2[1,1])
-  #   loglik_infl[t] <- logdensity.norm(y[2,t], mu[2,t], 1 / sigma2[2,2])
-  # }
 
   for (t in (train_metrics_skip+1):N_train) {
     loglik_gdp[t-train_metrics_skip]  <- logdensity.norm(y[1,t], mu[1,t], 1 / sigma2[1,1])
     loglik_infl[t-train_metrics_skip] <- logdensity.norm(y[2,t], mu[2,t], 1 / sigma2[2,2])
   }
-
 
   ############################################################
   ######################## PREDICTION ########################
@@ -902,19 +911,32 @@ model {
   for (i in 1:2) {
     for (j in 1:2) {
       for (o in 1:order) {
-        # A[i, j, o] ~ dunif(-1.2, 1.2)
-        A[i, j, o] ~ dnorm(0, 10)
+        A[i, j, o] ~ dunif(-1.2, 1.2)
+        # A[i, j, o] ~ dnorm(0, 10)
       }
     }
   }
   
-  tau     ~ dwish(R, 3) # dwish(ScaleMatrix... Identity should be ok, df)
+  # Dynamically inserted prior for tau
+  
+  {{prior_for_tau}}
+  
+  # __if UNCORRELATED_ERRORS__
+  # 
+  # tau[1,1] ~ dgamma(0.01, 0.01)
+  # tau[2,2] ~ dgamma(0.01, 0.01)
+  # tau[1,2] <- 0
+  # tau[2,1] <- 0
+  
+  # __else__
+  # 
+  # tau     ~ dwish(R, 3) # dwish(R=ScaleMatrix... Identity, df=degrees of freedom)
+  
   m_gdp   ~ dnorm(0.0, 1.0E-4)
   m_infl  ~ dnorm(0.0, 1.0E-4)
   m0     <- c(m_gdp, m_infl)
   
   sigma2 <- inverse(tau)
-  
   
   ############################################################
   ######################## EXTRACTION ########################
@@ -970,10 +992,20 @@ visualise_VAR = function(
 ```
 
 ```{r}
-R = matrix(c(1, 0, 0, 1), nrow=2, byrow=TRUE)
 y = matrix(c(series_GDP, series_CPI), nrow=2, byrow=TRUE)
 
-order=3
+order=1
+
+use_wishart = TRUE
+
+if (use_wishart) {
+  prior_for_tau = prior_wishart
+} else {
+  prior_for_tau = prior_gamma
+}
+final_modelVAR_string <- glue(modelVAR_string, .open="{{", .close="}}")
+
+print(glue(modelVAR_string, .open="{{", .close="}}"))
 
 to_save <- c(
   "A",
@@ -991,7 +1023,6 @@ to_save <- c(
 
 data_list <- list(
   "y"=y,
-  "R"=R,
   "order"=order,
   "N_train" = N_train,
   "N_test" = N_test,
@@ -999,7 +1030,7 @@ data_list <- list(
 )
 
 jags_output_VAR = fit_JAGS(
-  modelVAR_string,
+  final_modelVAR_string,
   data_list,
   to_save,
   n_iter=6000,
@@ -1016,7 +1047,6 @@ visualise_VAR(
   keep=5
 )
 
-
 # Wrapper for GDP-only metrics
 output_gdp <- list(
   mean      = list(yp_out = jags_output_VAR$mean$yp_out_gdp, train_metrics_skip=jags_output_VAR$mean$train_metrics_skip),
@@ -1028,7 +1058,6 @@ output_infl <- list(
   mean      = list(yp_out = jags_output_VAR$mean$yp_out_infl, train_metrics_skip=jags_output_VAR$mean$train_metrics_skip),
   sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_infl)
 )
-
 
 # Compute univariate metrics for GDP and CPI
 mets_VAR_gdp  <- compute_metrics(output_gdp,  series_GDP, N_train, k = 4*order + 2 + 3)
@@ -1066,6 +1095,81 @@ metrics_df_CPI <- rbind(
   )
 )
 ```
+
+## Correlated vs Uncorrelated errors
+
+We will now try to fit the $VAR(1)$ model using two different priors for the precision matrix $tau$ of the 2 errors.
+
+***Prior 1: diagonal precision matrix***
+
+We will force the errors to be uncorrelated. We will do this by setting the priors for the off-diagonal elements of $tau$ to be 0, while leaving a gamma prior to the diagonal elements, akin to the priors used of the univariate AR models.
+
+***Prior 2: positive definite precision matrix***
+
+We will set a Wishart prior to the precision matrix $tau$. This will allow the precision matrix to have off-diagonal elements different from zero, but will still ensure that it will be positive definite.
+
+```{r}
+
+# Uncorrelated errors
+
+prior_for_tau = prior_gamma
+modelVAR_string_gamma <- glue(modelVAR_string, .open="{{", .close="}}")
+
+jags_output_VAR_gamma = fit_JAGS(
+  modelVAR_string_gamma,
+  data_list,
+  to_save,
+  n_iter=6000,
+  n_adapt=1000,
+  n_chain=1,
+  n_burnin=2000)
+
+# Possibly correlated errors (Wishart prior)
+
+prior_for_tau = prior_wishart
+modelVAR_string_wishart <- glue(modelVAR_string, .open="{{", .close="}}")
+
+jags_output_VAR_wishart = fit_JAGS(
+  modelVAR_string_wishart,
+  data_list,
+  to_save,
+  n_iter=6000,
+  n_adapt=1000,
+  n_chain=1,
+  n_burnin=2000)
+
+```
+
+```{r}
+print(glue("Posterior means using diagonal prior"))
+print(glue("\r\nA"))
+print(jags_output_VAR_gamma$mean$A[,,1])
+print(glue("\r\nsigma2"))
+print(jags_output_VAR_gamma$mean$sigma2)
+
+print(glue("\r\n\r\nPosterior means using Wishart prior"))
+print(glue("\r\nA"))
+print(jags_output_VAR_wishart$mean$A[,,1])
+print(glue("\r\nsigma2"))
+print(jags_output_VAR_wishart$mean$sigma2)
+```
+
+From these results we see that the noises of the 2 time series are somewhat correlated.
+
+Pearson Correlation Coefficient:
+
+$$
+r \;=\;\frac{\text{Cov}(err_{gdp},err_{cpi})}{\sqrt{\text{Var}(err_{gdp})\,\times\,\text{Var}(err_{cpi})}}
+\;=\;
+\frac{0.5529124}{\sqrt{2.5870927 \times 0.9520914}}
+\;\approx\;0.3523
+$$
+
+This indicates a **moderate positive** linear relationship between the two variables. It suggests that as one variable increases, the other tends to increase as well, but not perfectly.
+
+On the other hand, the effects of the 2 different priors on the matrix A is very moderate.
+
+This suggest that the two variables are moderately related through their contemporaneous shocks, but this relation is not dominant enough to significantly affect the lagged relationship between the two variables.
 
 ## Metrics
 
