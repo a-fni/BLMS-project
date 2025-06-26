@@ -374,7 +374,7 @@ compute_dic_marginal <- function(ll_mat) {
 
 ## JAGS model strings
 
-At this point, we define all our JAGS model strings so as to be able to reuse them multiple times through out the script. We start with with defining the model for a generic $AR(n)$ sequence. The auto-regressive order n is passed to the model by means of the `order` variable.
+At this point, we define all our JAGS model strings so as to be able to reuse them multiple times through out the script. We start with with defining the model for a generic $AR(n)$ sequence. The auto-regressive order $n$ is passed to the model by means of the `order` variable.
 
 $$
 y(t) = \left[ \sum_{i=1}^{n} \alpha_i y(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
@@ -444,129 +444,13 @@ model {
 }"
 ```
 
-We now define an $MA(1)$ process.
+We now define a generic $MA(n)$ process. The memory order $n$ is passed to the model by means of the `order` variable.
 
 $$
-y(t) = \alpha \eta(t-1) + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
+y(t) = \left[ \sum_{i=1}^n \alpha_i \eta(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
 $$
 
-```{r}
-modelMA_string_legacy <- "
-model {
-  ############################################################
-  ######################## LIKELIHOOD ########################
-  ############################################################
-  
-  # 1. Bootstrap the MA(1) sequence
-  e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
-  yp_in[1]  <- y[1]
-  
-  # 2. Recursive step of the MA process
-  for (t in 2:N_train) {
-    mu[t]     <- m0 + beta * e[t-1]
-    y[t]      ~  dnorm(mu[t], tau)
-    yp_in[t]  ~  dnorm(mu[t], tau)
-    
-    # Extracting actual WN value
-    e[t]  <- y[t] - mu[t]
-  }
-
-  for (t in (train_metrics_skip+1):N_train) {
-    loglik[t-train_metrics_skip] <- logdensity.norm(y[t], mu[t], tau)
-  }
-  
-  ############################################################
-  ######################## PREDICTION ########################
-  ############################################################
-
-  # 1. Bootstrappingthe out-of-sample predictor
-  e_pred[1] ~  dnorm(0, tau)
-  mu_out[1] <- m0 + beta * e[N_train]
-  yp_out[1] ~  dnorm(mu_out[1], tau)
-  
-  # 2. Recursive step of the out-of-sample predictor
-  for (t in 2:N_test) {
-    mu_out[t] <- m0 + beta * e_pred[t-1]
-    yp_out[t] ~  dnorm(mu_out[t], tau)
-    e_pred[t] ~  dnorm(0, tau)
-  }
-  
-  ############################################################
-  ########################## PRIOR ###########################
-  ############################################################
-  
-  m0    ~ dnorm(0.0, 1.0E-4)
-  tau   ~ dgamma(0.01, 0.01)
-  beta  ~ dunif(-1, 1)
-  
-  # Defining converstion from precision to variance here
-  sigma2 <- 1 / tau
-}"
-```
-
-```{r}
-modelMA_string_predictor_legacy <- "
-model {
-  ############################################################
-  ######################## LIKELIHOOD ########################
-  ############################################################
-  
-  # 1. Bootstrap the MA(1) sequence
-  e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
-  yp_in[1]  <- y[1]
-  
-  # 2. Recursive step of the MA process
-  for (t in 2:N_train) {
-    mu[t]     <- m0 + beta * e[t-1]
-    y[t]      ~  dnorm(mu[t], tau)
-    yp_in[t]  ~  dnorm(m0 + beta * (y[t-1] - yp_in[t-1]), tau)
-    
-    # Extracting actual WN value
-    e[t] <- y[t] - mu[t]
-  }
-
-  for (t in (train_metrics_skip+1):N_train) {
-    loglik[t-train_metrics_skip] <- logdensity.norm(y[t], mu[t], tau)
-  }
-  
-  ############################################################
-  ######################## PREDICTION ########################
-  ############################################################
-
-  # ALWAYS 1-STEP-AHEAD METHOD
-  # # 1. Bootstrappingthe out-of-sample predictor
-  # e_pred[1] ~  dnorm(0, tau)
-  # mu_out[1] <- m0 + beta * e[N_train]
-  # yp_out[1] ~  dnorm(mu_out[1], tau)
-  # 
-  # # 2. Recursive step of the out-of-sample predictor
-  # for (t in 2:N_test) {
-  #   mu_out[t] <- m0 + beta * e_pred[t-1]
-  #   yp_out[t] ~  dnorm(m0 + beta * (yp_out[t-1] - mu_out[t-1]), tau)
-  #   e_pred[t] ~  dnorm(0, tau)
-  # }
-  
-  # INCREMENTAL K-STEP AHEAD METHOD
-  # 1. Bootstrappingthe out-of-sample predictor
-  yp_out[1] ~  dnorm(m0 + beta * e[N_train], tau)
-
-  # 2. Recursive step of the out-of-sample predictor
-  for (t in 2:N_test) {
-    yp_out[t] ~  dnorm(m0, tau / (1 + beta^2))
-  }
-  
-  ############################################################
-  ########################## PRIOR ###########################
-  ############################################################
-  
-  m0    ~ dnorm(0.0, 1.0E-4)
-  tau   ~ dgamma(0.01, 0.01)
-  beta  ~ dunif(-1, 1)
-  
-  # Defining converstion from precision to variance here
-  sigma2 <- 1 / tau
-}"
-```
+For any order $n ≥ 1$ the following model will correctly implement a $MA(n)$ process, which allows us to automatically test multiple MA processes easily and at once.
 
 ```{r}
 modelMA_string <- "
@@ -618,69 +502,13 @@ model {
 }"
 ```
 
-The following model will merge the two previous models defining an $ARMA(1, 1)$ model.
+Finally, the following model will merge the two previous models defining an $ARMA(p, q)$ model.
 
 $$
-y(t) = \beta y(t-1) + \alpha \eta(t-1) + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2).
+y(t) = \left[ \sum_{i=1}^p \beta_i y(t-i) \right] + \left[ \sum_{i=1}^q \alpha_i \eta(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2).
 $$
 
-The choice for the auto-regressive part is a result of the analysis of the performance of $AR(n)$ models with $n > 1$ which seemed to indicate that a shallower memory was better.
-
-```{r}
-modelARMA_string_legacy <- "
-model {
-  ############################################################
-  ######################## LIKELIHOOD ########################
-  ############################################################
-  
-  # 1. Bootstrap the ARMA sequence
-  e[1]      <- 0    # ALTERNATIVE: e[1] ~ dnorm(0, tau)
-  yp_in[1]  <- y[1]
-
-  # 2. Recursive step of the ARMA process
-  for (t in 2:N_train) {
-    mu[t]     <- m0 + beta * y[t-1] + alpha * e[t-1]
-    y[t]      ~  dnorm(mu[t], tau)
-    yp_in[t]  ~  dnorm(mu[t], tau)
-    
-    # Extracting actual WN value
-    e[t]  <- y[t] - mu[t]
-  }
-
-  for (t in (train_metrics_skip+1):N_train) {
-    loglik[t-train_metrics_skip] <- logdensity.norm(y[t], mu[t], tau)
-  }
-
-  ############################################################
-  ######################## PREDICTION ########################
-  ############################################################
-  
-  # 1. Bootstrappingthe out-of-sample predictor
-  e_pred[1] ~  dnorm(0, tau)
-  mu_out[1] <- m0 + beta * y[N_train] + alpha * e[N_train]
-  yp_out[1] ~  dnorm(mu_out[1], tau)
-  
-  # 2. Recursive step of the out-of-sample predictor
-  for (t in 2:N_test) {
-    mu_out[t] <- m0 + beta * yp_out[t-1] + alpha * e_pred[t-1]
-    yp_out[t] ~  dnorm(mu_out[t], tau)
-    e_pred[t] ~  dnorm(0, tau)
-  }
-  
-  ############################################################
-  ########################## PRIOR ###########################
-  ############################################################
-  
-  m0    ~ dnorm(0.0, 1.0E-4)
-  beta  ~ dunif(-1, 1)
-  alpha ~ dunif(-1, 1)
-  tau   ~ dgamma(0.01, 0.01)
-  
-  # Defining converstion from precision to variance here
-  sigma2 <- 1 / tau
-}
-"
-```
+The parameters `order_ar` and `order_ma` allow us to specify the two orders when simulating the model so as to be able to test all possible combinations of auto-regressive and moving-average processes.
 
 ```{r}
 modelARMA_string <- "
@@ -769,8 +597,7 @@ model {
   # Defining converstion from precision to variance here
   sigma2 <- 1 / tau
   
-}
-"
+}"
 ```
 
 ## GDP time series
@@ -1007,7 +834,13 @@ for (order_ma in 1:max_order_ma) {
 
 ## VAR
 
-Finally, we will to fit generic order VAR(n) models
+Finally, we will to fit generic order VAR(n) models, which has the following form:
+
+$$
+\vec{y}(t) = \vec{\mu}_0 + \left[ \sum_{i=1}^n A_1 \vec{y}(t-i) \right] + \vec{\eta}(t) \qquad \eta \sim \mathcal{N}(\vec{0}, \Sigma)
+$$
+
+Where $\Sigma$ is the covariance matrix of our white noise (now an $\mathbb{R}^2$ vector) and $\vec{y}(t) \in \mathbb{R}^2$ now contains both the GDP and CPI time series, which will be modelled together in a correlated fashion. By passing the parameter `order` during simulation we can specify the auto-regressive order $n$ of the multivariate process.
 
 ```{r}
 modelVAR_string = "
