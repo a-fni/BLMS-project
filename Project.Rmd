@@ -35,8 +35,8 @@ plot(
   data$GDP_PC1[1:305],
   type="l",
   xlab="",
-  ylab="GDP",
-  main="GDP + CPI"
+  ylab="",
+  main="Percent change YoY (quarterly)"
 )
 lines(
   data$DATE[1:305],
@@ -44,6 +44,8 @@ lines(
   type="l",
   col="red"
 )
+
+legend(x="bottom",legend=c("GDP","CPI"),col=c("black","red"),lty=1)
 ```
 
 At this point, we setup our environment by converting the values in both time series into numericals, and then splitting them into training and testing. Finally, we define some useful variables which we will be using through out our script.
@@ -544,6 +546,17 @@ model {
   }
   
   ############################################################
+  ############ ONE STEP AHEAD PREDICTION #####################
+  ############################################################
+  
+  e_onestep[1:order]   <- e[(N_train-order+1):N_train]
+  for (t in 1:N_test) {
+    mu_onestep[t]      <- m0 + inprod(beta_rev, e_onestep[t:(t+order-1)])
+    yp_onestep_out[t]   ~ dnorm(mu_onestep[t], tau)
+    e_onestep[t+order] <- y[N_train+t] - mu_onestep[t]
+  }
+  
+  ############################################################
   ########################## PRIOR ###########################
   ############################################################
   
@@ -571,8 +584,6 @@ The parameters `order_ar` and `order_ma` allow us to specify the two orders when
 ```{r}
 modelARMA_string <- "
 model {
-
-  # order = max(order_ar, order_ma)
   
   ############################################################
   ######################## LIKELIHOOD ########################
@@ -614,28 +625,31 @@ model {
   yp_out <- z[(order+1):(order+N_test)]
   
   ############################################################
+  ############ ONE STEP AHEAD PREDICTION #####################
+  ############################################################
+  
+  e_onestep[1:order]   <- e[(N_train-order+1):N_train]
+  for (t in 1:N_test) {
+    mu_ar_onestep[t] <- inprod(alpha_rev, y[(N_train+t-order):(N_train+t-1)])
+    mu_ma_onestep[t]   <- inprod(beta_rev, e_onestep[t:(t+order-1)])
+    mu_onestep[t]      <- m0 + mu_ar_onestep[t] + mu_ma_onestep[t]
+    yp_onestep_out[t]   ~ dnorm(mu_onestep[t], tau)
+    e_onestep[t+order] <- y[N_train+t] - mu_onestep[t]
+  }
+  
+  ############################################################
   ########################## PRIOR ###########################
   ############################################################
   
   m0    ~ dnorm(0.0, 1.0E-4)
   tau   ~ dgamma(0.01, 0.01)
-
-  # for (i in 1:order) {
-  #   alpha[i]      ~ dunif(-1.1, 1.1)
-  #   alpha_rev[i] <- alpha[order-i+1]
-  #   
-  #   # beta[i]      ~ dunif(-1.1, 1.1)
-  #   # beta_rev[i] <- beta[order-i+1]
-  # }
   
   for (i in 1:order_ar) {
     alpha[i] ~ dunif(-1.1, 1.1)
   }
   for (i in (order_ar+1):order) {
-    # beta[i]      ~ dnorm(0, 10000)
     alpha[i]      <- 0
   }
-  
   for (i in 1:order) {
     alpha_rev[i] <- alpha[order-i+1]
   }
@@ -644,10 +658,8 @@ model {
     beta[i] ~ dunif(-1.1, 1.1)
   }
   for (i in (order_ma+1):order) {
-    # beta[i]      ~ dnorm(0, 10000)
     beta[i]      <- 0
   }
-  
   for (i in 1:order) {
     beta_rev[i] <- beta[order-i+1]
   }
@@ -742,6 +754,7 @@ to_save <- c(
   "sigma2",
   "yp_in",
   "yp_out",
+  "yp_onestep_out",
   "train_metrics_skip",
   "loglik"
 )
@@ -795,6 +808,7 @@ to_save <- c(
   "sigma2",
   "yp_in",
   "yp_out",
+  "yp_onestep_out",
   "train_metrics_skip",
   "loglik"
 )
@@ -923,6 +937,7 @@ to_save <- c(
   "sigma2",
   "yp_in",
   "yp_out",
+  "yp_onestep_out",
   "train_metrics_skip",
   "loglik"
 )
@@ -976,6 +991,7 @@ to_save <- c(
   "sigma2",
   "yp_in",
   "yp_out",
+  "yp_onestep_out",
   "train_metrics_skip",
   "loglik"
 )
@@ -1037,6 +1053,7 @@ Where $\Sigma$ is the covariance matrix of our white noise (now an $\mathbb{R}^2
 The idea behind this model is to attempt to model not only the two time-series independently, but also in a correlated way, as we work under the assumption that the two may influence each other.
 
 ```{r}
+# Prior fragment for Wishart distributions (positive definite covariance)
 prior_wishart <- "
   # Wishart prior for a full covariance matrix
   R[1,1] <- 1
@@ -1047,8 +1064,8 @@ prior_wishart <- "
 "
 
 # Prior fragment for independent Gamma distributions (diagonal covariance)
-prior_gamma <- "
-  # Independent Gamma priors for diagonal precision matrix
+prior_diagonal <- "
+  # Independent Gamma priors for diagonal elements of precision matrix
   tau[1,1] ~ dgamma(0.01, 0.01)
   tau[2,2] ~ dgamma(0.01, 0.01)
   tau[1,2] <- 0 
@@ -1096,6 +1113,18 @@ model {
   
   yp_out[1:2,1:N_test] = z[1:2,(order+1):(order+N_test)]
   
+  ############################################################
+  ############ ONE STEP AHEAD PREDICTION #####################
+  ############################################################
+  
+  for (t in 1:N_test) {
+    mu_onestep_tmp[1:2, t, 1] <- m0
+    for (j in 1:order) {
+      mu_onestep_tmp[1:2,t,j+1] <- mu_onestep_tmp[1:2, t, j] + A[,,j] %*% y[,(N_train+t-j)]
+    }
+    mu_onestep[1:2,t]     <- mu_onestep_tmp[1:2,t,order+1]
+    yp_onestep_out[1:2,t]  ~ dmnorm(mu_onestep[1:2,t], tau)
+  }
   
   ############################################################
   ########################## PRIOR ###########################
@@ -1143,7 +1172,8 @@ model {
   yp_in_infl  <- yp_in[2,]
   yp_out_gdp  <- yp_out[1,]
   yp_out_infl <- yp_out[2,]
-
+  yp_onestep_out_gdp  <- yp_onestep_out[1,]
+  yp_onestep_out_infl <- yp_onestep_out[2,]
 }"
 ```
 
@@ -1156,7 +1186,7 @@ use_wishart <- TRUE
 if (use_wishart) {
   prior_for_tau = prior_wishart
 } else {
-  prior_for_tau = prior_gamma
+  prior_for_tau = prior_diagonal
 }
 final_modelVAR_string <- glue(modelVAR_string, .open="{{", .close="}}")
 # Uncomment for debugging inspection
@@ -1172,6 +1202,8 @@ to_save <- c(
   "yp_in_infl",
   "yp_out_gdp",
   "yp_out_infl",
+  "yp_onestep_out_gdp",
+  "yp_onestep_out_infl",
   "train_metrics_skip",
   "loglik_gdp",   # marginal log-likelihood for GDP
   "loglik_infl"   # marginal log-likelihood for CPI
@@ -1205,13 +1237,21 @@ visualise_VAR(
 
 # Wrapper for GDP-only metrics
 output_gdp <- list(
-  mean      = list(yp_out = jags_output_VAR$mean$yp_out_gdp, train_metrics_skip=jags_output_VAR$mean$train_metrics_skip),
+  mean      = list(
+    yp_out = jags_output_VAR$mean$yp_out_gdp,
+    yp_onestep_out = jags_output_VAR$mean$yp_onestep_out_gdp,
+    train_metrics_skip=jags_output_VAR$mean$train_metrics_skip
+  ),
   sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_gdp)
 )
 
 # Wrapper for CPI-only metrics
 output_infl <- list(
-  mean      = list(yp_out = jags_output_VAR$mean$yp_out_infl, train_metrics_skip=jags_output_VAR$mean$train_metrics_skip),
+  mean      = list(
+    yp_out = jags_output_VAR$mean$yp_out_infl,
+    yp_onestep_out = jags_output_VAR$mean$yp_onestep_out_infl,
+    train_metrics_skip=jags_output_VAR$mean$train_metrics_skip
+  ),
   sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_infl)
 )
 
@@ -1266,7 +1306,7 @@ We will set a Wishart prior to the precision matrix of $\tau$. This will allow t
 
 ```{r}
 # Uncorrelated errors
-prior_for_tau         <- prior_gamma
+prior_for_tau         <- prior_diagonal
 modelVAR_string_gamma <- glue(modelVAR_string, .open="{{", .close="}}")
 jags_output_VAR_gamma <- fit_JAGS(
   modelVAR_string_gamma,
@@ -1305,7 +1345,7 @@ print(glue("\r\nsigma2"))
 print(jags_output_VAR_wishart$mean$sigma2)
 ```
 
-From these results we see that the noises of the 2 time series are somewhat correlated. We can comute the *Pearson Correlation Coefficient* to further inspect this hypotheses:
+From these results we see that the noises of the 2 time series are somewhat correlated. We can compute the *Pearson Correlation Coefficient* to further inspect this hypotheses:
 
 $$
 \rho(err_{gdp},err_{cpi}) \;=\;\frac{\text{Cov}(err_{gdp},err_{cpi})}{\sqrt{\text{Var}(err_{gdp})\,\times\,\text{Var}(err_{cpi})}}
