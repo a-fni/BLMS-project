@@ -1020,7 +1020,7 @@ for (order_ma in 1:max_order_ma) {
     visualise(x_axis, series_CPI, output, title=glue("CPI series, ARMA({order_ar}, {order_ma})"))
     
     # Updating metrics
-    mets <- compute_metrics(output, series_CPI, N_train, k=order+2)
+    mets <- compute_metrics(output, series_CPI, N_train, k=order_ar+order_ma+2)
     metrics_df_CPI <- rbind(
       metrics_df_CPI,
       data.frame(
