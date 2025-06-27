@@ -68,7 +68,11 @@ acf(series_GDP, lag.max=100)
 acf(series_CPI, lag.max=100)
 ```
 
-We now define a few utility functions which will be useful later. The first one automatises the interactions with JAGS, the second one will draw plots of both the whole time-series and its out-of-sample portion only.
+The auto-correlation functions of the two proceses do not clearly match any given noticeable pattern, hence a more sophisticated model selection will be needed, where multiple models will be tested and evaluated one against the other.
+
+### Utility functions
+
+For our convenience, we define a few utility functions which will be useful later. The first one automatises the interactions with JAGS, the second one will draw plots of both the whole time-series and its out-of-sample portion only, the third one will specifically plot a time-series along with the anomalies which have been detected through out its history, and so on.
 
 ```{r}
 fit_JAGS <- function(
@@ -79,7 +83,8 @@ fit_JAGS <- function(
   n_adapt=1000,   # JAGS n.adapt internal parameter
   n_chain=1,      # Number of chains to run
   n_burnin=1000,  # Burn-in value
-  n_thin=1        # Thinning value
+  n_thin=1,       # Thinning value
+  verbose=FALSE   # Displays JAGS logging / output (turn on for debugging)
 ) {
   
   output <- jags(
@@ -90,7 +95,8 @@ fit_JAGS <- function(
     n.iter=n_iter,
     n.chains=n_chain,
     n.burnin=n_burnin,
-    n.thin=n_thin
+    n.thin=n_thin,
+    verbose=verbose
   )
   
   return(output)
@@ -202,6 +208,60 @@ visualise <- function(
 ```
 
 ```{r}
+# Function in charge of visualising VAR models (requires custom rendering).
+# This acts as a wrapper function to the standard visualise(...) function, defined above.
+visualise_VAR = function(
+  x_axis,               # Values to be displayed on the x-axis of the plots
+  original_series_gdp,  # Original GDP time series with all samples
+  original_series_infl, # Original INFLATION time series with all samples
+  output,               # Output from VAR JAGS, with in-sample and out-of-sample predictions
+  title="VAR",          # Title to display on the graphs
+  keep=5                # Training sampled to keep in the test graph
+) {
+  
+  # Marginalise GDP
+  output_gdp = list()
+  output_gdp$mean$yp_in   = output$mean$yp_in_gdp
+  output_gdp$q2.5$yp_in   = output$q2.5$yp_in_gdp
+  output_gdp$q97.5$yp_in  = output$q97.5$yp_in_gdp
+  output_gdp$mean$yp_out  = output$mean$yp_out_gdp
+  output_gdp$q2.5$yp_out  = output$q2.5$yp_out_gdp
+  output_gdp$q97.5$yp_out = output$q97.5$yp_out_gdp
+  output_gdp$q25$yp_out   = output$q25$yp_out_gdp
+  output_gdp$q75$yp_out   = output$q75$yp_out_gdp
+  output_gdp$mean$m0      = output$mean$m_gdp
+  
+  # Marginalise CPI
+  output_infl = list()
+  output_infl$mean$yp_in   = output$mean$yp_in_infl
+  output_infl$q2.5$yp_in   = output$q2.5$yp_in_infl
+  output_infl$q97.5$yp_in  = output$q97.5$yp_in_infl
+  output_infl$mean$yp_out  = output$mean$yp_out_infl
+  output_infl$q2.5$yp_out  = output$q2.5$yp_out_infl
+  output_infl$q97.5$yp_out = output$q97.5$yp_out_infl
+  output_infl$q25$yp_out   = output$q25$yp_out_infl
+  output_infl$q75$yp_out   = output$q75$yp_out_infl
+  output_infl$mean$m0      = output$mean$m_infl
+  
+  # Call visualisation on marginalisations
+  visualise(
+    x_axis,
+    original_series_gdp,
+    output_gdp,
+    title=glue("GDP series, {title}"),
+    keep
+  )
+  visualise(
+    x_axis,
+    original_series_infl,
+    output_infl,
+    title=glue("CPI series, {title}"),
+    keep
+  )
+}
+```
+
+```{r}
 # Function in charge of visualising the anomaly points on top of its corresponding time series
 visualise_anomalies <- function(
   x_axis,             # X-axis to use for the plot
@@ -299,7 +359,6 @@ display_classification <- function(
 ```
 
 ```{r}
-
 # K is the number of effective params
 compute_metrics <- function(output, series, N_train, k) {
   
@@ -369,18 +428,17 @@ compute_dic_marginal <- function(ll_mat) {
   DIC      <- Dbar + pD
   return(DIC)
 }
-
 ```
 
-## JAGS model strings
+### JAGS model strings
 
-At this point, we define all our JAGS model strings so as to be able to reuse them multiple times through out the script. We start with with defining the model for a generic $AR(n)$ sequence. The auto-regressive order $n$ is passed to the model by means of the `order` variable.
+At this point, we define all our JAGS model strings so as to be able to reuse them multiple times through out the script. We start with with defining the model for a generic $\text{AR}(n)$ sequence. The auto-regressive order $n$ is passed to the model by means of the `order` variable.
 
 $$
 y(t) = \left[ \sum_{i=1}^{n} \alpha_i y(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
 $$
 
-For any order $n ≥ 1$ the following model will correctly implement an $AR(n)$ process, which allows us to automatically test multiple AR processes easily and at once.
+For any order $n ≥ 1$ the following model will correctly implement an $\text{AR}(n)$ process, which allows us to automatically test multiple AR processes easily and at once.
 
 ```{r}
 # AR(n) string
@@ -444,13 +502,13 @@ model {
 }"
 ```
 
-We now define a generic $MA(n)$ process. The memory order $n$ is passed to the model by means of the `order` variable.
+We now define a generic $\text{MA}(n)$ process. The memory order $n$ is passed to the model by means of the `order` variable.
 
 $$
 y(t) = \left[ \sum_{i=1}^n \alpha_i \eta(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
 $$
 
-For any order $n ≥ 1$ the following model will correctly implement a $MA(n)$ process, which allows us to automatically test multiple MA processes easily and at once.
+For any order $n ≥ 1$ the following model will correctly implement a $\text{MA}(n)$ process, which allows us to automatically test multiple MA processes easily and at once.
 
 ```{r}
 modelMA_string <- "
@@ -502,7 +560,7 @@ model {
 }"
 ```
 
-Finally, the following model will merge the two previous models defining an $ARMA(p, q)$ model.
+Finally, the following model will merge the two previous models defining an $\text{ARMA}(p, q)$ model.
 
 $$
 y(t) = \left[ \sum_{i=1}^p \beta_i y(t-i) \right] + \left[ \sum_{i=1}^q \alpha_i \eta(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2).
@@ -600,12 +658,14 @@ model {
 }"
 ```
 
-## GDP time series
+## Modelling
 
-We will, at first, start off with some $AR(n)$ models, with increasing values of $n$. We will use the obtained results ot decide whether or not the selected model may apply to the problem at hand, and we will also evaluate which regressive order is best.
+At this point we can start modelling our two time series using the stochastic processes for which we defined the previous model strings. We will start with the GDP time-series and then focus on the CPI time-series. Finally, we will also attempt to model a correlated process using a $\text{VAR}(n)$ model, where both time-series will be modelled together at once.
+
+### GDP time series
 
 ```{r}
-# Metrics Dataframe
+# Metrics dataframe setup
 metrics_df_GDP <- data.frame(
   Model = character(),
   DIC   = numeric(),  
@@ -618,21 +678,9 @@ metrics_df_GDP <- data.frame(
   MASE  = numeric(),
   stringsAsFactors = FALSE
 )
-
-metrics_df_CPI <- data.frame(
-  Model = character(),
-  DIC   = numeric(),  
-  WAIC  = numeric(), 
-  BIC   = numeric(),
-  MSE   = numeric(),  
-  MAE   = numeric(), 
-  MAPE  = numeric(),
-  SMAPE = numeric(),  
-  MASE  = numeric(),
-  stringsAsFactors = FALSE
-)
-
 ```
+
+We will, at first, start off with some $\text{AR}(n)$ models, with increasing values of $n$. We will use the obtained results ot decide whether or not the selected model may apply to the problem at hand, and we will also evaluate which regressive order is best.
 
 ```{r}
 to_save <- c(
@@ -645,9 +693,6 @@ to_save <- c(
   "train_metrics_skip",
   "loglik"
 )
-
-# Creating placeholder to store outputs
-o <- list()
 
 # Trying our AR(n) from n=1 to max_order
 max_order <- 9
@@ -668,10 +713,7 @@ for (order in 1:max_order) {
   )
   visualise(x_axis, series_GDP, output, title=glue("GDP series, AR({order})"))
   
-  if (order == 1) {
-    o = output
-  }
-  
+  # Update metrics
   mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
   metrics_df_GDP <- rbind(
     metrics_df_GDP,
@@ -691,19 +733,7 @@ for (order in 1:max_order) {
 }
 ```
 
-```{r}
-# Extract only AR(1)
-output <- o
-
-# Inspecting results
-parameters <- c("alpha", "m0")
-mcmc_trace(output$samples, pars=parameters)
-mcmc_areas(output$samples, pars=parameters, prob=0.95)
-
-print(output)
-```
-
-We will now also fit an MA(1) model to evaluate whether it is a better model.
+We will now also fit some $\text{MA}(n)$ processes (for now $1 \leq n \leq 5$) to evaluate whether anyone might be better.
 
 ```{r}
 to_save <- c(
@@ -715,9 +745,6 @@ to_save <- c(
   "train_metrics_skip",
   "loglik"
 )
-
-# Creating placeholder to store outputs
-o <- list()
 
 # Trying our MA(n) from n=1 to max_order
 max_order <- 5
@@ -738,10 +765,7 @@ for (order in 1:max_order) {
   )
   visualise(x_axis, series_GDP, output, title=glue("GDP series, MA({order})"))
   
-  if (order == 1) {
-    o = output
-  }
-  
+  # Updating metrics
   mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
   metrics_df_GDP <- rbind(
     metrics_df_GDP,
@@ -761,14 +785,7 @@ for (order in 1:max_order) {
 }
 ```
 
-```{r}
-# Inspecting results
-parameters <- c("beta", "m0")
-mcmc_trace(o$samples, pars=parameters)
-mcmc_areas(o$samples, pars=parameters, prob=0.95)
-
-print(output)
-```
+Finally, we combine the auto-regressive and moving-average proccesses and try to model our series using an $\text{ARMA}(p, q)$ process. For now, we will attempt modelling for all combinations of $1 \leq p \leq 3$ and $1 \leq q \leq 3$.
 
 ```{r}
 to_save <- c(
@@ -781,9 +798,6 @@ to_save <- c(
   "train_metrics_skip",
   "loglik"
 )
-
-# Creating placeholder to store outputs
-o <- list()
 
 # Trying our AR(n) from n=1 to max_order
 max_order_ar <- 3
@@ -808,10 +822,7 @@ for (order_ma in 1:max_order_ma) {
     )
     visualise(x_axis, series_GDP, output, title=glue("GDP series, ARMA({order_ar}, {order_ma})"))
     
-    if (order == 1) {
-      o = output
-    }
-    
+    # Updating metrics
     mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
     metrics_df_GDP <- rbind(
       metrics_df_GDP,
@@ -832,18 +843,200 @@ for (order_ma in 1:max_order_ma) {
 }
 ```
 
-## VAR
-
-Finally, we will to fit generic order VAR(n) models, which has the following form:
-
-$$
-\vec{y}(t) = \vec{\mu}_0 + \left[ \sum_{i=1}^n A_1 \vec{y}(t-i) \right] + \vec{\eta}(t) \qquad \eta \sim \mathcal{N}(\vec{0}, \Sigma)
-$$
-
-Where $\Sigma$ is the covariance matrix of our white noise (now an $\mathbb{R}^2$ vector) and $\vec{y}(t) \in \mathbb{R}^2$ now contains both the GDP and CPI time series, which will be modelled together in a correlated fashion. By passing the parameter `order` during simulation we can specify the auto-regressive order $n$ of the multivariate process.
+### CPI time series
 
 ```{r}
+# Metrics dataframe setup
+metrics_df_CPI <- data.frame(
+  Model = character(),
+  DIC   = numeric(),  
+  WAIC  = numeric(), 
+  BIC   = numeric(),
+  MSE   = numeric(),  
+  MAE   = numeric(), 
+  MAPE  = numeric(),
+  SMAPE = numeric(),  
+  MASE  = numeric(),
+  stringsAsFactors = FALSE
+)
+```
 
+We continue our modelling moving to the CPI time-series. We will proceede as for the GDP, trying our a few $\text{AR}(n)$ models, then moving to some $\text{AR}(n)$ and finally, putting both together, some $\text{ARMA}(p, q)$ models.
+
+```{r}
+to_save <- c(
+  "alpha",
+  "m0",
+  "sigma2",
+  "yp_in",
+  "yp_out",
+  "yp_onestep_out",
+  "train_metrics_skip",
+  "loglik"
+)
+
+# Trying our AR(n) from n=1 to max_order
+max_order <- 9
+for (order in 1:max_order) {
+  data_list <- list(
+    "y"=series_CPI,
+    "order"=order,
+    "N_train"=N_train,
+    "N_test"=N_test,
+    "train_metrics_skip"=50
+  )
+  
+  # Perform simulations and visualise output
+  output <- fit_JAGS(
+    modelAR_string,
+    data_list,
+    to_save
+  )
+  visualise(x_axis, series_CPI, output, title=glue("CPI series, AR({order})"))
+  
+  # Update metrics
+  mets <- compute_metrics(output, series_CPI, N_train, k=order+2)
+  metrics_df_CPI <- rbind(
+    metrics_df_CPI,
+    data.frame(
+      Model = paste0("AR(",order,")"),
+      DIC   = mets$DIC,
+      WAIC  = mets$WAIC,
+      BIC   = mets$BIC,
+      MSE   = mets$MSE,
+      MAE   = mets$MAE,
+      MAPE  = mets$MAPE,
+      SMAPE = mets$SMAPE,
+      MASE  = mets$MASE,
+      stringsAsFactors = FALSE
+    )
+  )
+}
+```
+
+We will now also fit some ${MA}(n)$ processes (for now $1 \leq n \leq 5$) to evaluate whether anyone might be better.
+
+```{r}
+to_save <- c(
+  "beta",
+  "m0",
+  "sigma2",
+  "yp_in",
+  "yp_out",
+  "train_metrics_skip",
+  "loglik"
+)
+
+# Trying our MA(n) from n=1 to max_order
+max_order <- 5
+for (order in 1:max_order) {
+  data_list <- list(
+    "y"=series_CPI,
+    "order"=order,
+    "N_train"=N_train,
+    "N_test"=N_test,
+    "train_metrics_skip"=50
+  )
+  
+  # Perform simulations and visualise output
+  output <- fit_JAGS(
+    modelMA_string,
+    data_list,
+    to_save
+  )
+  visualise(x_axis, series_CPI, output, title=glue("CPI series, MA({order})"))
+  
+  # Updating metrics
+  mets <- compute_metrics(output, series_CPI, N_train, k=order+2)
+  metrics_df_CPI <- rbind(
+    metrics_df_CPI,
+    data.frame(
+      Model = paste0("MA(",order,")"),
+      DIC   = mets$DIC,
+      WAIC  = mets$WAIC,
+      BIC   = mets$BIC,
+      MSE   = mets$MSE,
+      MAE   = mets$MAE,
+      MAPE  = mets$MAPE,
+      SMAPE = mets$SMAPE,
+      MASE  = mets$MASE,
+      stringsAsFactors = FALSE
+    )
+  )
+}
+```
+
+Finally, we combine the auto-regressive and moving-average proccesses and try to model our series using an $\text{ARMA}(p, q)$ process. For now, we will attempt modelling for all combinations of $1 \leq p \leq 3$ and $1 \leq q \leq 3$.
+
+```{r}
+to_save <- c(
+  "alpha",
+  "beta",
+  "m0",
+  "sigma2",
+  "yp_in",
+  "yp_out",
+  "train_metrics_skip",
+  "loglik"
+)
+
+# Trying our AR(n) from n=1 to max_order
+max_order_ar <- 3
+max_order_ma <- 3
+for (order_ma in 1:max_order_ma) {
+  for (order_ar in 1:max_order_ar) {
+    data_list <- list(
+      "y"=series_CPI,
+      "N_train"=N_train,
+      "N_test"=N_test,
+      "order"=max(order_ar, order_ma),
+      "order_ar"=order_ar,
+      "order_ma"=order_ma,
+      "train_metrics_skip"=50
+    )
+    
+    # Perform simulations and visualise output
+    output <- fit_JAGS(
+      modelARMA_string,
+      data_list,
+      to_save
+    )
+    visualise(x_axis, series_CPI, output, title=glue("CPI series, ARMA({order_ar}, {order_ma})"))
+    
+    # Updating metrics
+    mets <- compute_metrics(output, series_CPI, N_train, k=order+2)
+    metrics_df_CPI <- rbind(
+      metrics_df_CPI,
+      data.frame(
+        Model = glue("ARMA({order_ar}, {order_ma})"),
+        DIC   = mets$DIC,
+        WAIC  = mets$WAIC,
+        BIC   = mets$BIC,
+        MSE   = mets$MSE,
+        MAE   = mets$MAE,
+        MAPE  = mets$MAPE,
+        SMAPE = mets$SMAPE,
+        MASE  = mets$MASE,
+        stringsAsFactors = FALSE
+      )
+    )
+  }
+}
+```
+
+### VAR modelling
+
+Finally, we will try to fit generic order $\text{VAR}(n)$ models, which have the following form:
+
+$$
+\vec{y}(t) = \vec{\mu}_0 + \left[ \sum_{i=1}^n A_i \vec{y}(t-i) \right] + \vec{\eta}(t) \qquad \forall i \; A_i \in \mathbb{M}(2 \times 2, \mathbb{R}) \qquad \vec{\eta} \sim \mathcal{N}(\vec{0}, \Sigma)
+$$
+
+Where $\Sigma$ is the covariance matrix of our white noise (now an $\mathbb{R}^2$ vector) and $\vec{y}(t) \in \mathbb{R}^2$ now contains both the GDP and CPI time-series, which will be modelled together in a correlated fashion. By passing the parameter `order` during simulation we can specify the auto-regressive order $n$ of the multivariate process.
+
+The idea behind this model is to attempt to model not only the two time-series independently, but also in a correlated way, as we work under the assumption that the two may influence each other.
+
+```{r}
 prior_wishart <- "
   # Wishart prior for a full covariance matrix
   R[1,1] <- 1
@@ -955,48 +1148,10 @@ model {
 ```
 
 ```{r}
-visualise_VAR = function(
-  x_axis,               # Values to be displayed on the x-axis of the plots
-  original_series_gdp,  # Original GDP time series with all samples
-  original_series_infl, # Original INFLATION time series with all samples
-  output,               # Output from VAR JAGS, with in-sample and out-of-sample predictions
-  title="",             # Title to display on the graphs
-  keep=5                # Training sampled to keep in the test graph
-) {
-  
-  output_gdp = list()
-  output_gdp$mean$yp_in   = output$mean$yp_in_gdp
-  output_gdp$q2.5$yp_in   = output$q2.5$yp_in_gdp
-  output_gdp$q97.5$yp_in  = output$q97.5$yp_in_gdp
-  output_gdp$mean$yp_out  = output$mean$yp_out_gdp
-  output_gdp$q2.5$yp_out  = output$q2.5$yp_out_gdp
-  output_gdp$q97.5$yp_out = output$q97.5$yp_out_gdp
-  output_gdp$q25$yp_out   = output$q25$yp_out_gdp
-  output_gdp$q75$yp_out   = output$q75$yp_out_gdp
-  output_gdp$mean$m0      = output$mean$m_gdp
-  
-  output_infl = list()
-  output_infl$mean$yp_in   = output$mean$yp_in_infl
-  output_infl$q2.5$yp_in   = output$q2.5$yp_in_infl
-  output_infl$q97.5$yp_in  = output$q97.5$yp_in_infl
-  output_infl$mean$yp_out  = output$mean$yp_out_infl
-  output_infl$q2.5$yp_out  = output$q2.5$yp_out_infl
-  output_infl$q97.5$yp_out = output$q97.5$yp_out_infl
-  output_infl$q25$yp_out   = output$q25$yp_out_infl
-  output_infl$q75$yp_out   = output$q75$yp_out_infl
-  output_infl$mean$m0      = output$mean$m_infl
-  
-  visualise(x_axis, original_series_gdp, output_gdp, title, keep)
-  visualise(x_axis, original_series_infl, output_infl, title, keep)
-}
-```
-
-```{r}
-y = matrix(c(series_GDP, series_CPI), nrow=2, byrow=TRUE)
-
-order=1
-
-use_wishart = TRUE
+# Setting up parameters
+y <- matrix(c(series_GDP, series_CPI), nrow=2, byrow=TRUE)
+order <- 1
+use_wishart <- TRUE
 
 if (use_wishart) {
   prior_for_tau = prior_wishart
@@ -1004,9 +1159,10 @@ if (use_wishart) {
   prior_for_tau = prior_gamma
 }
 final_modelVAR_string <- glue(modelVAR_string, .open="{{", .close="}}")
+# Uncomment for debugging inspection
+#print(glue(modelVAR_string, .open="{{", .close="}}"))
 
-print(glue(modelVAR_string, .open="{{", .close="}}"))
-
+# Defining JAGS parameters
 to_save <- c(
   "A",
   "m_gdp",
@@ -1020,7 +1176,6 @@ to_save <- c(
   "loglik_gdp",   # marginal log-likelihood for GDP
   "loglik_infl"   # marginal log-likelihood for CPI
 )
-
 data_list <- list(
   "y"=y,
   "order"=order,
@@ -1029,6 +1184,7 @@ data_list <- list(
   "train_metrics_skip"=50
 )
 
+# Fitting VAR model and visualising it
 jags_output_VAR = fit_JAGS(
   final_modelVAR_string,
   data_list,
@@ -1036,8 +1192,8 @@ jags_output_VAR = fit_JAGS(
   n_iter=6000,
   n_adapt=1000,
   n_chain=1,
-  n_burnin=2000)
-
+  n_burnin=2000
+)
 visualise_VAR(
   x_axis,
   series_GDP,
@@ -1059,7 +1215,8 @@ output_infl <- list(
   sims.list = list(loglik  = jags_output_VAR$sims.list$loglik_infl)
 )
 
-# Compute univariate metrics for GDP and CPI
+# Compute univariate metrics for GDP and CPI as well
+# RMK: just for visualisation purposes: can't compare marginalised metrics with univariate metrics
 mets_VAR_gdp  <- compute_metrics(output_gdp,  series_GDP, N_train, k = 4*order + 2 + 3)
 mets_VAR_infl <- compute_metrics(output_infl, series_CPI, N_train, k = 4*order + 2 + 3)
 
@@ -1078,7 +1235,6 @@ metrics_df_GDP <- rbind(
     stringsAsFactors = FALSE
   )
 )
-
 metrics_df_CPI <- rbind(
   metrics_df_CPI,
   data.frame(
@@ -1096,51 +1252,46 @@ metrics_df_CPI <- rbind(
 )
 ```
 
-## Correlated vs Uncorrelated errors
+### VAR: Correlated vs Uncorrelated errors
 
-We will now try to fit the $VAR(1)$ model using two different priors for the precision matrix $tau$ of the 2 errors.
+We will now try to fit the $\text{VAR}(1)$ model using two different priors for the precision matrix of $\tau$ of the 2 errors.
 
 ***Prior 1: diagonal precision matrix***
 
-We will force the errors to be uncorrelated. We will do this by setting the priors for the off-diagonal elements of $tau$ to be 0, while leaving a gamma prior to the diagonal elements, akin to the priors used of the univariate AR models.
+We will force the errors to be uncorrelated. We will do this by setting the priors for the off-diagonal elements to be 0, while leaving a gamma prior to the diagonal elements, akin to the priors used of the univariate AR models.
 
 ***Prior 2: positive definite precision matrix***
 
-We will set a Wishart prior to the precision matrix $tau$. This will allow the precision matrix to have off-diagonal elements different from zero, but will still ensure that it will be positive definite.
+We will set a Wishart prior to the precision matrix of $\tau$. This will allow the precision matrix to have off-diagonal elements different from zero, but will still ensure that it will be positive definite.
 
 ```{r}
-
 # Uncorrelated errors
-
-prior_for_tau = prior_gamma
+prior_for_tau         <- prior_gamma
 modelVAR_string_gamma <- glue(modelVAR_string, .open="{{", .close="}}")
-
-jags_output_VAR_gamma = fit_JAGS(
+jags_output_VAR_gamma <- fit_JAGS(
   modelVAR_string_gamma,
   data_list,
   to_save,
   n_iter=6000,
   n_adapt=1000,
   n_chain=1,
-  n_burnin=2000)
+  n_burnin=2000
+)
 
 # Possibly correlated errors (Wishart prior)
-
-prior_for_tau = prior_wishart
+prior_for_tau           <- prior_wishart
 modelVAR_string_wishart <- glue(modelVAR_string, .open="{{", .close="}}")
-
-jags_output_VAR_wishart = fit_JAGS(
+jags_output_VAR_wishart <- fit_JAGS(
   modelVAR_string_wishart,
   data_list,
   to_save,
   n_iter=6000,
   n_adapt=1000,
   n_chain=1,
-  n_burnin=2000)
+  n_burnin=2000
+)
 
-```
-
-```{r}
+# Logging results of the two models
 print(glue("Posterior means using diagonal prior"))
 print(glue("\r\nA"))
 print(jags_output_VAR_gamma$mean$A[,,1])
@@ -1154,12 +1305,10 @@ print(glue("\r\nsigma2"))
 print(jags_output_VAR_wishart$mean$sigma2)
 ```
 
-From these results we see that the noises of the 2 time series are somewhat correlated.
-
-Pearson Correlation Coefficient:
+From these results we see that the noises of the 2 time series are somewhat correlated. We can comute the *Pearson Correlation Coefficient* to further inspect this hypotheses:
 
 $$
-r \;=\;\frac{\text{Cov}(err_{gdp},err_{cpi})}{\sqrt{\text{Var}(err_{gdp})\,\times\,\text{Var}(err_{cpi})}}
+\rho(err_{gdp},err_{cpi}) \;=\;\frac{\text{Cov}(err_{gdp},err_{cpi})}{\sqrt{\text{Var}(err_{gdp})\,\times\,\text{Var}(err_{cpi})}}
 \;=\;
 \frac{0.5529124}{\sqrt{2.5870927 \times 0.9520914}}
 \;\approx\;0.3523
@@ -1172,6 +1321,8 @@ On the other hand, the effects of the 2 different priors on the matrix A is very
 This suggest that the two variables are moderately related through their contemporaneous shocks, but this relation is not dominant enough to significantly affect the lagged relationship between the two variables.
 
 ## Metrics
+
+At this point, we display all so far computer metrics for all models and both time-series, so as to be able to perform model selection objectively.
 
 ```{r}
 # GDP table
@@ -1186,7 +1337,7 @@ kable(
   row_spec(0, background = "#000000", color = "#FFFFFF") %>%  # intestazione
   row_spec(1:nrow(metrics_df_GDP), background = "#000000", color = "#FFFFFF")  # righe dati
 
-# Tabella CPI
+# CPI table
 kable(
   metrics_df_CPI,
   caption = "Univariate model metrics — CPI series",
@@ -1199,11 +1350,9 @@ kable(
   row_spec(1:nrow(metrics_df_CPI), background = "#000000", color = "#FFFFFF")
 ```
 
-PAY ATTENTION:
+**NOTICE:** The MAPE metric exceeds 100% because the series *(quarterly or monthly GDP growth rates)* has true values *(denominators)* that are very small or close to zero. This results in an amplified percentage.
 
-The MAPE exceeds 100% because the series (quarterly or monthly GDP growth rates) has actual values (denominators) that are very small or close to zero in some periods, which amplifies the percentage.
-
-## AR order selection
+### AR order selection
 
 ```{r}
 # Metrics Dataframe
@@ -1296,7 +1445,7 @@ plot(1:max_order, metrics_df_GDP_AR[1:max_order,9], type="l", main="MASE")
 
 ```
 
-## MA order selection
+### MA order selection
 
 ```{r}
 # Metrics Dataframe for MA
@@ -1388,7 +1537,7 @@ plot(1:max_order_ma, metrics_df_GDP_MA[1:max_order_ma,9], type="l", main="MA - M
 
 ```
 
-## ARMA order selection
+### ARMA order selection
 
 ```{r}
 # Metrics Dataframe for ARMA
@@ -1570,7 +1719,7 @@ $$
 \Delta_t := y_{t} - y_{t-1} \stackrel{iid}{\sim} \mathcal{N}(\mu, \sigma_t^2)
 $$
 
-In order to be able to perform anomaly detection, we must ensure that the sequence of incremental values $\Delta_t$ can be approximated to a random walk. This can be verified by trying to fit an $AR(1)$ process to the initial sequence of values $y_t$ and checking whether the value $|\alpha|$ is close to 1:
+In order to be able to perform anomaly detection, we must ensure that the sequence of incremental values $\Delta_t$ can be approximated to a random walk. This can be verified by trying to fit an $\text{AR}(1)$ process to the initial sequence of values $y_t$ and checking whether the value $|\alpha|$ is close to 1:
 
 ```{r}
 # Data lists for both delta-series
