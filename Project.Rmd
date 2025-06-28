@@ -432,6 +432,48 @@ compute_dic_marginal <- function(ll_mat) {
   DIC      <- Dbar + pD
   return(DIC)
 }
+
+# Appends metrics row to provided metrics_df and returns it
+# If no arguments are passed, generates and returns a new empty metrics_df
+metrics_df_append <- function(metrics_df = NA, new_mets = NA, name="...") {
+  if (anyNA(metrics_df)) {
+    print("anyNA")
+    
+    return(data.frame(
+      Model = character(),
+      DIC   = numeric(),  
+      WAIC  = numeric(), 
+      BIC   = numeric(),
+      MSE   = numeric(),  
+      MAE   = numeric(), 
+      MAPE  = numeric(),
+      SMAPE = numeric(),  
+      MASE  = numeric(),
+      stringsAsFactors = FALSE
+    ))
+    
+    
+  } else if (!anyNA(metrics_df) && !all(is.na(new_mets))) {
+    
+    return(rbind(
+      metrics_df,
+      data.frame(
+        Model = name,
+        DIC   = new_mets$DIC,
+        WAIC  = new_mets$WAIC,
+        BIC   = new_mets$BIC,
+        MSE   = new_mets$MSE,
+        MAE   = new_mets$MAE,
+        MAPE  = new_mets$MAPE,
+        SMAPE = new_mets$SMAPE,
+        MASE  = new_mets$MASE,
+        stringsAsFactors = FALSE
+      ))
+    )
+  }
+  
+  return(metrics_df)
+}
 ```
 
 ### JAGS model strings
@@ -680,18 +722,7 @@ At this point we can start modelling our two time series using the stochastic pr
 
 ```{r}
 # Metrics dataframe setup
-metrics_df_GDP <- data.frame(
-  Model = character(),
-  DIC   = numeric(),  
-  WAIC  = numeric(), 
-  BIC   = numeric(),
-  MSE   = numeric(),  
-  MAE   = numeric(), 
-  MAPE  = numeric(),
-  SMAPE = numeric(),  
-  MASE  = numeric(),
-  stringsAsFactors = FALSE
-)
+metrics_df_GDP <- metrics_df_append()
 ```
 
 We will, at first, start off with some $\text{AR}(n)$ models, with increasing values of $n$. We will use the obtained results ot decide whether or not the selected model may apply to the problem at hand, and we will also evaluate which regressive order is best.
@@ -729,21 +760,7 @@ for (order in 1:max_order) {
   
   # Update metrics
   mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
-  metrics_df_GDP <- rbind(
-    metrics_df_GDP,
-    data.frame(
-      Model = paste0("AR(",order,")"),
-      DIC   = mets$DIC,
-      WAIC  = mets$WAIC,
-      BIC   = mets$BIC,
-      MSE   = mets$MSE,
-      MAE   = mets$MAE,
-      MAPE  = mets$MAPE,
-      SMAPE = mets$SMAPE,
-      MASE  = mets$MASE,
-      stringsAsFactors = FALSE
-    )
-  )
+  metrics_df_GDP <- metrics_df_append(metrics_df_GDP, mets, glue("AR({order})"))
 }
 ```
 
@@ -782,21 +799,7 @@ for (order in 1:max_order) {
   
   # Updating metrics
   mets <- compute_metrics(output, series_GDP, N_train, k=order+2)
-  metrics_df_GDP <- rbind(
-    metrics_df_GDP,
-    data.frame(
-      Model = paste0("MA(",order,")"),
-      DIC   = mets$DIC,
-      WAIC  = mets$WAIC,
-      BIC   = mets$BIC,
-      MSE   = mets$MSE,
-      MAE   = mets$MAE,
-      MAPE  = mets$MAPE,
-      SMAPE = mets$SMAPE,
-      MASE  = mets$MASE,
-      stringsAsFactors = FALSE
-    )
-  )
+  metrics_df_GDP <- metrics_df_append(metrics_df_GDP, mets, glue("MA({order})"))
 }
 ```
 
@@ -840,21 +843,7 @@ for (order_ma in 1:max_order_ma) {
     
     # Updating metrics
     mets <- compute_metrics(output, series_GDP, N_train, k=order_ar+order_ma+2)
-    metrics_df_GDP <- rbind(
-      metrics_df_GDP,
-      data.frame(
-        Model = glue("ARMA({order_ar}, {order_ma})"),
-        DIC   = mets$DIC,
-        WAIC  = mets$WAIC,
-        BIC   = mets$BIC,
-        MSE   = mets$MSE,
-        MAE   = mets$MAE,
-        MAPE  = mets$MAPE,
-        SMAPE = mets$SMAPE,
-        MASE  = mets$MASE,
-        stringsAsFactors = FALSE
-      )
-    )
+    metrics_df_GDP <- metrics_df_append(metrics_df_GDP, mets, glue("ARMA({order_ar}, {order_ma})"))
   }
 }
 ```
@@ -863,18 +852,7 @@ for (order_ma in 1:max_order_ma) {
 
 ```{r}
 # Metrics dataframe setup
-metrics_df_CPI <- data.frame(
-  Model = character(),
-  DIC   = numeric(),  
-  WAIC  = numeric(), 
-  BIC   = numeric(),
-  MSE   = numeric(),  
-  MAE   = numeric(), 
-  MAPE  = numeric(),
-  SMAPE = numeric(),  
-  MASE  = numeric(),
-  stringsAsFactors = FALSE
-)
+metrics_df_CPI <- metrics_df_append()
 ```
 
 We continue our modelling moving to the CPI time-series. We will proceede as for the GDP, trying our a few $\text{AR}(n)$ models, then moving to some $\text{AR}(n)$ and finally, putting both together, some $\text{ARMA}(p, q)$ models.
@@ -916,21 +894,7 @@ for (order in 1:max_order) {
   
   # Update metrics
   mets <- compute_metrics(output, series_CPI, N_train, k=order+2)
-  metrics_df_CPI <- rbind(
-    metrics_df_CPI,
-    data.frame(
-      Model = paste0("AR(",order,")"),
-      DIC   = mets$DIC,
-      WAIC  = mets$WAIC,
-      BIC   = mets$BIC,
-      MSE   = mets$MSE,
-      MAE   = mets$MAE,
-      MAPE  = mets$MAPE,
-      SMAPE = mets$SMAPE,
-      MASE  = mets$MASE,
-      stringsAsFactors = FALSE
-    )
-  )
+  metrics_df_CPI <- metrics_df_append(metrics_df_CPI, mets, glue("AR(",order,")"))
 }
 ```
 
@@ -969,21 +933,7 @@ for (order in 1:max_order) {
   
   # Updating metrics
   mets <- compute_metrics(output, series_CPI, N_train, k=order+2)
-  metrics_df_CPI <- rbind(
-    metrics_df_CPI,
-    data.frame(
-      Model = paste0("MA(",order,")"),
-      DIC   = mets$DIC,
-      WAIC  = mets$WAIC,
-      BIC   = mets$BIC,
-      MSE   = mets$MSE,
-      MAE   = mets$MAE,
-      MAPE  = mets$MAPE,
-      SMAPE = mets$SMAPE,
-      MASE  = mets$MASE,
-      stringsAsFactors = FALSE
-    )
-  )
+  metrics_df_CPI <- metrics_df_append(metrics_df_CPI, mets, glue("MA(",order,")"))
 }
 ```
 
@@ -1027,21 +977,7 @@ for (order_ma in 1:max_order_ma) {
     
     # Updating metrics
     mets <- compute_metrics(output, series_CPI, N_train, k=order_ar+order_ma+2)
-    metrics_df_CPI <- rbind(
-      metrics_df_CPI,
-      data.frame(
-        Model = glue("ARMA({order_ar}, {order_ma})"),
-        DIC   = mets$DIC,
-        WAIC  = mets$WAIC,
-        BIC   = mets$BIC,
-        MSE   = mets$MSE,
-        MAE   = mets$MAE,
-        MAPE  = mets$MAPE,
-        SMAPE = mets$SMAPE,
-        MASE  = mets$MASE,
-        stringsAsFactors = FALSE
-      )
-    )
+    metrics_df_CPI <- metrics_df_append(metrics_df_CPI, mets, glue("ARMA({order_ar}, {order_ma})"))
   }
 }
 ```
@@ -1266,36 +1202,8 @@ output_infl <- list(
 mets_VAR_gdp  <- compute_metrics(output_gdp,  series_GDP, N_train, k = 4*order + 2 + 3)
 mets_VAR_infl <- compute_metrics(output_infl, series_CPI, N_train, k = 4*order + 2 + 3)
 
-metrics_df_GDP <- rbind(
-  metrics_df_GDP,
-  data.frame(
-    Model = paste0("VAR_univar_GDP(", order, ")"),
-    DIC   = mets_VAR_gdp$DIC,
-    WAIC  = mets_VAR_gdp$WAIC,
-    BIC   = mets_VAR_gdp$BIC,
-    MSE   = mets_VAR_gdp$MSE,
-    MAE   = mets_VAR_gdp$MAE,
-    MAPE  = mets_VAR_gdp$MAPE,
-    SMAPE = mets_VAR_gdp$SMAPE,
-    MASE  = mets_VAR_gdp$MASE,
-    stringsAsFactors = FALSE
-  )
-)
-metrics_df_CPI <- rbind(
-  metrics_df_CPI,
-  data.frame(
-    Model = paste0("VAR_univar_CPI(", order, ")"),
-    DIC   = mets_VAR_infl$DIC,
-    WAIC  = mets_VAR_infl$WAIC,
-    BIC   = mets_VAR_infl$BIC,
-    MSE   = mets_VAR_infl$MSE,
-    MAE   = mets_VAR_infl$MAE,
-    MAPE  = mets_VAR_infl$MAPE,
-    SMAPE = mets_VAR_infl$SMAPE,
-    MASE  = mets_VAR_infl$MASE,
-    stringsAsFactors = FALSE
-  )
-)
+metrics_df_GDP <- metrics_df_append(metrics_df_GDP, mets_VAR_gdp, glue("VAR_univar_GDP({order})"))
+metrics_df_CPI <- metrics_df_append(metrics_df_CPI, mets_VAR_infl, glue("VAR_univar_GDP({order})"))
 ```
 
 ### VAR: Correlated vs Uncorrelated errors
@@ -1406,7 +1314,7 @@ We will now display some trace plots for some parameters of some of the fitted m
 
 ```{r}
 
-n_chains = if (intense) 3 else 1
+n_chain = if (intense) 3 else 1
 
 to_save <- c(
   "alpha",
@@ -1426,14 +1334,16 @@ output <- fit_JAGS(
   modelAR_string,
   data_list,
   to_save,
-  n_thin=n_chains,
+  n_thin=3,
   n_adapt=2000,
-  n_chain=3,
+  n_chain=n_chain,
   n_iter=6000
 )
 
+color_scheme_set("teal")
 mcmc_trace(output$samples[,1:11])
 mcmc_dens(output$samples[,1:11])
+mcmc_intervals(output$samples[,1:11])
 ```
 
 ### MA(5) trace and density plots (GDP)
@@ -1466,6 +1376,7 @@ output <- fit_JAGS(
 
 mcmc_trace(output$samples[,1:7])
 mcmc_dens(output$samples[,1:7])
+mcmc_intervals(output$samples[,1:7])
 ```
 
 ### VAR(1) trace and density plots (GDP)
@@ -1498,6 +1409,7 @@ output <- fit_JAGS(
 
 mcmc_trace(output$samples[,1:8])
 mcmc_dens(output$samples[,1:8])
+mcmc_intervals(output$samples[,1:8])
 ```
 
 ### ARMA order selection
