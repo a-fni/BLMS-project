@@ -24,6 +24,7 @@ Setting up environment, importing the dataset and visualising a graph of the two
 ```{r}
 rm(list=ls())
 
+# If set to TRUE higher order models will also be trained
 intense = FALSE
 
 # New Family Houses Sold: United States
@@ -437,8 +438,6 @@ compute_dic_marginal <- function(ll_mat) {
 # If no arguments are passed, generates and returns a new empty metrics_df
 metrics_df_append <- function(metrics_df = NA, new_mets = NA, name="...") {
   if (anyNA(metrics_df)) {
-    print("anyNA")
-    
     return(data.frame(
       Model = character(),
       DIC   = numeric(),  
@@ -608,7 +607,7 @@ model {
   tau   ~ dgamma(0.01, 0.01)
 
   for (i in 1:order){
-    beta[i]      ~ dunif(-1.1, 1.1)
+    beta[i]      ~ dnorm(0, 1/100)  #dunif(-1.1, 1.1)
     beta_rev[i] <- beta[order-i+1]
   }
   
@@ -699,7 +698,7 @@ model {
   }
 
   for (i in 1:order_ma) {
-    beta[i] ~ dunif(-1.1, 1.1)
+    beta[i] ~ dnorm(0, 1/100)  #dunif(-1.1, 1.1)
   }
   for (i in (order_ma+1):order) {
     beta[i]      <- 0
@@ -1334,10 +1333,10 @@ output <- fit_JAGS(
   modelAR_string,
   data_list,
   to_save,
-  n_thin=3,
+  n_thin=100,
   n_adapt=2000,
   n_chain=n_chain,
-  n_iter=6000
+  n_iter=100000
 )
 
 color_scheme_set("teal")
@@ -1368,10 +1367,10 @@ output <- fit_JAGS(
   modelMA_string,
   data_list,
   to_save,
-  n_thin=3,
+  n_thin=100,
   n_adapt=2000,
-  n_chain=n_chains,
-  n_iter=6000
+  n_chain=n_chain,
+  n_iter=100000
 )
 
 mcmc_trace(output$samples[,1:7])
@@ -1403,7 +1402,7 @@ output <- fit_JAGS(
   to_save,
   n_thin=3,
   n_adapt=2000,
-  n_chain=n_chains,
+  n_chain=n_chain,
   n_iter=6000
 )
 
