@@ -25,7 +25,7 @@ Setting up environment, importing the dataset and visualising a graph of the two
 rm(list=ls())
 
 # If set to TRUE higher order models will also be trained
-intense = FALSE
+intense = TRUE
 
 # New Family Houses Sold: United States
 # Source: https://fred.stlouisfed.org/series/HSN1F
@@ -1312,7 +1312,6 @@ We will now display some trace plots for some parameters of some of the fitted m
 ### AR(9) trace and density plots (GDP)
 
 ```{r}
-
 n_chain = if (intense) 3 else 1
 
 to_save <- c(
@@ -1345,7 +1344,7 @@ mcmc_dens(output$samples[,1:11])
 mcmc_intervals(output$samples[,1:11])
 ```
 
-### MA(5) trace and density plots (GDP)
+### MA(4) trace and density plots (GDP)
 
 ```{r}
 
@@ -1357,7 +1356,7 @@ to_save <- c(
 
 data_list <- list(
   "y"=series_GDP,
-  "order"=5,
+  "order"=4,
   "N_train"=N_train,
   "N_test"=N_test,
   "train_metrics_skip"=50
@@ -1378,7 +1377,254 @@ mcmc_dens(output$samples[,1:7])
 mcmc_intervals(output$samples[,1:7])
 ```
 
-### VAR(1) trace and density plots (GDP)
+### ARMA order selection and traces (GDP)
+
+```{r}
+## --- 1. Support Function: matrix [p × q] ---------------------------
+make_matrix <- function(df, metric, P, Q){
+  M <- matrix(NA_real_, nrow = P, ncol = Q)   # row = p,  column = q
+  for(i in seq_len(nrow(df))){
+    nums <- as.integer(regmatches(df$Model[i],
+                   gregexpr("\\d+", df$Model[i]))[[1]])
+    if(length(nums) == 2){
+      p <- nums[1];  q <- nums[2]
+      M[p, q] <- df[i, metric]
+    }
+  }
+  M
+}
+## --- 2. function for plotting axis  -------------------------
+plot_heat <- function(mat, title){
+  image(x = 1:ncol(mat),            
+        y = 1:nrow(mat),            
+        z = mat,                  
+        col = colorRampPalette(
+                c("navy","deepskyblue","yellow","orange","red"))(100),
+        axes = FALSE, xlab = "", ylab = "", main = title, useRaster = TRUE)
+  contour(1:ncol(mat), 1:nrow(mat), mat,
+          add = TRUE, lwd = 0.7, drawlabels = FALSE)
+  axis(1, at = 1:ncol(mat), labels = 1:ncol(mat), cex.axis = 0.75) # q
+  axis(2, at = 1:nrow(mat), labels = 1:nrow(mat), las = 1,
+       cex.axis = 0.75)                                           # p
+  box()
+}
+
+## --- 3. parameters & palette --------------------------------------------
+max_p <- max_order_ar   # max order AR
+max_q <- max_order_ma   # max order MA
+metrics <- c("DIC","WAIC","BIC","MSE",
+             "MAE","MAPE","SMAPE","MASE")
+
+## --- 4. heat-map 2×4 for axis p↔q --------------------------------------
+op <- par(mfrow = c(2,4), mar = c(2.2,2.2,2.4,0.6))
+
+for(met in metrics){
+  mat <- make_matrix(metrics_df_GDP, met, max_p, max_q)
+  plot_heat(mat, paste("ARMA –", met))
+}
+
+par(op)
+```
+
+```{r}
+n_chain = if (intense) 3 else 1
+
+to_save <- c(
+  "alpha",
+  "beta",
+  "m0",
+  "sigma2"
+)
+
+order_ar <- 2
+order_ma <- 3
+data_list <- list(
+  "y"=series_GDP,
+  "N_train"=N_train,
+  "N_test"=N_test,
+  "order"=max(order_ar, order_ma),
+  "order_ar"=order_ar,
+  "order_ma"=order_ma,
+  "train_metrics_skip"=50
+)
+
+# Perform simulations and visualise output
+output <- fit_JAGS(
+  modelARMA_string,
+  data_list,
+  to_save,
+  n_thin=106,
+  n_adapt=2000,
+  n_chain=n_chain,
+  n_iter=100000,
+  verbose=TRUE
+)
+
+color_scheme_set("teal")
+mcmc_trace(output$samples[,1:8])
+mcmc_dens(output$samples[,1:8])
+mcmc_intervals(output$samples[,1:8])
+```
+
+### AR(9) trace and density plots (CPI)
+
+```{r}
+n_chain = if (intense) 3 else 1
+
+to_save <- c(
+  "alpha",
+  "m0",
+  "sigma2"
+)
+
+data_list <- list(
+  "y"=series_CPI,
+  "order"=9,
+  "N_train"=N_train,
+  "N_test"=N_test,
+  "train_metrics_skip"=50
+)
+  
+output <- fit_JAGS(
+  modelAR_string,
+  data_list,
+  to_save,
+  n_thin=100,
+  n_adapt=2000,
+  n_chain=n_chain,
+  n_iter=100000
+)
+
+color_scheme_set("teal")
+mcmc_trace(output$samples[,1:11])
+mcmc_dens(output$samples[,1:11])
+mcmc_intervals(output$samples[,1:11])
+```
+
+### MA(4) trace and density plots (CPI)
+
+```{r}
+
+to_save <- c(
+  "beta",
+  "m0",
+  "sigma2"
+)
+
+data_list <- list(
+  "y"=series_CPI,
+  "order"=4,
+  "N_train"=N_train,
+  "N_test"=N_test,
+  "train_metrics_skip"=50
+)
+  
+output <- fit_JAGS(
+  modelMA_string,
+  data_list,
+  to_save,
+  n_thin=100,
+  n_adapt=2000,
+  n_chain=n_chain,
+  n_iter=100000
+)
+
+mcmc_trace(output$samples[,1:7])
+mcmc_dens(output$samples[,1:7])
+mcmc_intervals(output$samples[,1:7])
+```
+
+### ARMA order selection and traces (CPI)
+
+```{r}
+## --- 1. Support Function: matrix [p × q] ---------------------------
+make_matrix <- function(df, metric, P, Q){
+  M <- matrix(NA_real_, nrow = P, ncol = Q)  
+  for(i in seq_len(nrow(df))){
+    nums <- as.integer(regmatches(df$Model[i],
+                   gregexpr("\\d+", df$Model[i]))[[1]])
+    if(length(nums) == 2){
+      p <- nums[1];  q <- nums[2]
+      M[p, q] <- df[i, metric]
+    }
+  }
+  M
+}
+
+## --- 2. function for plotting axis  -------------------------
+plot_heat <- function(mat, title){
+  image(x = 1:ncol(mat),         
+        y = 1:nrow(mat),          
+        z = mat,                   
+        col = colorRampPalette(
+                c("navy","deepskyblue","yellow","orange","red"))(100),
+        axes = FALSE, xlab = "", ylab = "", main = title, useRaster = TRUE)
+  contour(1:ncol(mat), 1:nrow(mat), mat,
+          add = TRUE, lwd = 0.7, drawlabels = FALSE)
+  axis(1, at = 1:ncol(mat), labels = 1:ncol(mat), cex.axis = 0.75) # q
+  axis(2, at = 1:nrow(mat), labels = 1:nrow(mat), las = 1,
+       cex.axis = 0.75)                                           # p
+  box()
+}
+
+## --- 3. parameters & palette --------------------------------------------
+max_p <- max_order_ar   # max order AR
+max_q <- max_order_ma   # max order MA
+metrics <- c("DIC","WAIC","BIC","MSE",
+             "MAE","MAPE","SMAPE","MASE")
+
+## --- 4. heat-map 2×4 for axis p↔q --------------------------------------
+op <- par(mfrow = c(2,4), mar = c(2.2,2.2,2.4,0.6))
+
+for(met in metrics){
+  mat <- make_matrix(metrics_df_CPI, met, max_p, max_q)
+  plot_heat(mat, paste("ARMA –", met))
+}
+
+par(op)
+```
+
+```{r}
+n_chain = if (intense) 3 else 1
+
+to_save <- c(
+  "alpha",
+  "beta",
+  "m0",
+  "sigma2"
+)
+
+order_ar <- 3
+order_ma <- 3
+data_list <- list(
+  "y"=series_CPI,
+  "N_train"=N_train,
+  "N_test"=N_test,
+  "order"=max(order_ar, order_ma),
+  "order_ar"=order_ar,
+  "order_ma"=order_ma,
+  "train_metrics_skip"=50
+)
+
+# Perform simulations and visualise output
+output <- fit_JAGS(
+  modelARMA_string,
+  data_list,
+  to_save,
+  n_thin=100,
+  n_adapt=2000,
+  n_chain=n_chain,
+  n_iter=100000,
+  verbose=TRUE
+)
+
+color_scheme_set("teal")
+mcmc_trace(output$samples[,1:8])
+mcmc_dens(output$samples[,1:8])
+mcmc_intervals(output$samples[,1:8])
+```
+
+### VAR(1) trace and density plots
 
 ```{r}
 
@@ -1409,92 +1655,6 @@ output <- fit_JAGS(
 mcmc_trace(output$samples[,1:8])
 mcmc_dens(output$samples[,1:8])
 mcmc_intervals(output$samples[,1:8])
-```
-
-### ARMA order selection
-
-```{r}
-
-# Create matrices for heatmap visualization
-create_metric_matrix <- function(df, metric_col) {
-  metric_matrix <- matrix(NA, nrow=max_order_ar, ncol=max_order_ma)
-  
-  for (i in 1:nrow(df)) {
-    model_name <- df$Model[i]
-    # Extract p and q from ARMA(p, q)
-    parts <- regmatches(model_name, regexpr("\\((\\d+), (\\d+)\\)", model_name))
-    if (length(parts) > 0) {
-      nums <- regmatches(parts, gregexpr("\\d+", parts))[[1]]
-      p <- as.numeric(nums[1])
-      q <- as.numeric(nums[2])
-      metric_matrix[p, q] <- df[i, metric_col]
-    }
-  }
-  
-  return(metric_matrix)
-}
-
-# Create heatmaps for different metrics
-par(mfrow=c(2,4))
-
-# DIC
-dic_matrix <- create_metric_matrix(metrics_df_GDP, "DIC")
-image(1:max_order_ar, 1:max_order_ma, dic_matrix, 
-      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - DIC",
-      col=heat.colors(20))
-contour(1:max_order_ar, 1:max_order_ma, dic_matrix, add=TRUE)
-
-# WAIC
-waic_matrix <- create_metric_matrix(metrics_df_GDP, "WAIC")
-image(1:max_order_ar, 1:max_order_ma, waic_matrix, 
-      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - WAIC",
-      col=heat.colors(20))
-contour(1:max_order_ar, 1:max_order_ma, waic_matrix, add=TRUE)
-
-# BIC
-bic_matrix <- create_metric_matrix(metrics_df_GDP, "BIC")
-image(1:max_order_ar, 1:max_order_ma, bic_matrix, 
-      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - BIC",
-      col=heat.colors(20))
-contour(1:max_order_ar, 1:max_order_ma, bic_matrix, add=TRUE)
-
-# MSE
-mse_matrix <- create_metric_matrix(metrics_df_GDP, "MSE")
-image(1:max_order_ar, 1:max_order_ma, mse_matrix, 
-      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - MSE",
-      col=heat.colors(20))
-contour(1:max_order_ar, 1:max_order_ma, mse_matrix, add=TRUE)
-
-# MAE
-mae_matrix <- create_metric_matrix(metrics_df_GDP, "MAE")
-image(1:max_order_ar, 1:max_order_ma, mae_matrix, 
-      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - MAE",
-      col=heat.colors(20))
-contour(1:max_order_ar, 1:max_order_ma, mae_matrix, add=TRUE)
-
-# MAPE
-mape_matrix <- create_metric_matrix(metrics_df_GDP, "MAPE")
-image(1:max_order_ar, 1:max_order_ma, mape_matrix, 
-      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - MAPE",
-      col=heat.colors(20))
-contour(1:max_order_ar, 1:max_order_ma, mape_matrix, add=TRUE)
-
-# SMAPE
-smape_matrix <- create_metric_matrix(metrics_df_GDP, "SMAPE")
-image(1:max_order_ar, 1:max_order_ma, smape_matrix, 
-      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - SMAPE",
-      col=heat.colors(20))
-contour(1:max_order_ar, 1:max_order_ma, smape_matrix, add=TRUE)
-
-# MASE
-mase_matrix <- create_metric_matrix(metrics_df_GDP, "MASE")
-image(1:max_order_ar, 1:max_order_ma, mase_matrix, 
-      xlab="AR order (p)", ylab="MA order (q)", main="ARMA - MASE",
-      col=heat.colors(20))
-contour(1:max_order_ar, 1:max_order_ma, mase_matrix, add=TRUE)
-
-par(mfrow=c(1,1))
-
 ```
 
 ### Model selection
