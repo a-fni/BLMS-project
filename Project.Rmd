@@ -29,7 +29,7 @@ Setting up environment, importing the dataset and visualising a graph of the two
 rm(list=ls())
 
 # If set to TRUE higher order models will also be trained
-intense = TRUE
+intense = FALSE
 
 # New Family Houses Sold: United States
 # Source: https://fred.stlouisfed.org/series/HSN1F
@@ -611,7 +611,7 @@ model {
   tau   ~ dgamma(0.01, 0.01)
 
   for (i in 1:order){
-    beta[i]      ~ dnorm(0, 1/100)  #dunif(-1.1, 1.1)
+    beta[i]      ~ dnorm(0, 1/10)
     beta_rev[i] <- beta[order-i+1]
   }
   
@@ -692,7 +692,7 @@ model {
   tau   ~ dgamma(0.01, 0.01)
   
   for (i in 1:order_ar) {
-    alpha[i] ~ dunif(-1.1, 1.1)
+    alpha[i] ~ dunif(-1.5, 1.5)
   }
   for (i in (order_ar+1):order) {
     alpha[i]      <- 0
@@ -702,7 +702,7 @@ model {
   }
 
   for (i in 1:order_ma) {
-    beta[i] ~ dnorm(0, 1/100)  #dunif(-1.1, 1.1)
+    beta[i] ~ dnorm(0, 1/10)
   }
   for (i in (order_ma+1):order) {
     beta[i]      <- 0
@@ -806,7 +806,7 @@ for (order in 1:max_order) {
 }
 ```
 
-Finally, we combine the auto-regressive and moving-average proccesses and try to model our series using an $\text{ARMA}(p, q)$ process. For now, we will attempt modelling for all combinations of $1 \leq p \leq 3$ and $1 \leq q \leq 3$.
+Finally, we combine the auto-regressive and moving-average proccesses and try to model our series using an $\text{ARMA}(p, q)$ process. For now, we will attempt modelling for all combinations of $1 \leq p \leq 4$ and $1 \leq q \leq 4$.
 
 ```{r}
 to_save <- c(
@@ -940,7 +940,7 @@ for (order in 1:max_order) {
 }
 ```
 
-Finally, we combine the auto-regressive and moving-average proccesses and try to model our series using an $\text{ARMA}(p, q)$ process. For now, we will attempt modelling for all combinations of $1 \leq p \leq 3$ and $1 \leq q \leq 3$.
+Finally, we combine the auto-regressive and moving-average proccesses and try to model our series using an $\text{ARMA}(p, q)$ process. For now, we will attempt modelling for all combinations of $1 \leq p \leq 4$ and $1 \leq q \leq 4$.
 
 ```{r}
 to_save <- c(
@@ -1339,7 +1339,8 @@ output <- fit_JAGS(
   n_thin=100,
   n_adapt=2000,
   n_chain=n_chain,
-  n_iter=100000
+  n_iter=100000,
+  verbose=TRUE
 )
 
 color_scheme_set("teal")
@@ -1348,9 +1349,10 @@ mcmc_dens(output$samples[,1:11])
 mcmc_intervals(output$samples[,1:11])
 ```
 
-### MA(4) trace and density plots (GDP)
+### MA(3) trace and density plots (GDP)
 
 ```{r}
+n_chain = if (intense) 3 else 1
 
 to_save <- c(
   "beta",
@@ -1360,7 +1362,7 @@ to_save <- c(
 
 data_list <- list(
   "y"=series_GDP,
-  "order"=4,
+  "order"=3,
   "N_train"=N_train,
   "N_test"=N_test,
   "train_metrics_skip"=50
@@ -1373,12 +1375,13 @@ output <- fit_JAGS(
   n_thin=100,
   n_adapt=2000,
   n_chain=n_chain,
-  n_iter=100000
+  n_iter=100000,
+  verbose=TRUE
 )
 
-mcmc_trace(output$samples[,1:7])
-mcmc_dens(output$samples[,1:7])
-mcmc_intervals(output$samples[,1:7])
+mcmc_trace(output$samples[,1:5])
+mcmc_dens(output$samples[,1:5])
+mcmc_intervals(output$samples[,1:5])
 ```
 
 ### ARMA order selection and traces (GDP)
@@ -1457,10 +1460,10 @@ output <- fit_JAGS(
   modelARMA_string,
   data_list,
   to_save,
-  n_thin=106,
+  n_thin=50,
   n_adapt=2000,
   n_chain=n_chain,
-  n_iter=100000,
+  n_iter=50000,
   verbose=TRUE
 )
 
@@ -1496,7 +1499,8 @@ output <- fit_JAGS(
   n_thin=100,
   n_adapt=2000,
   n_chain=n_chain,
-  n_iter=100000
+  n_iter=100000,
+  verbose=TRUE
 )
 
 color_scheme_set("teal")
@@ -1508,6 +1512,7 @@ mcmc_intervals(output$samples[,1:11])
 ### MA(4) trace and density plots (CPI)
 
 ```{r}
+n_chain = if (intense) 3 else 1
 
 to_save <- c(
   "beta",
@@ -1530,12 +1535,13 @@ output <- fit_JAGS(
   n_thin=100,
   n_adapt=2000,
   n_chain=n_chain,
-  n_iter=100000
+  n_iter=100000,
+  verbose=TRUE
 )
 
-mcmc_trace(output$samples[,1:7])
-mcmc_dens(output$samples[,1:7])
-mcmc_intervals(output$samples[,1:7])
+mcmc_trace(output$samples[,1:6])
+mcmc_dens(output$samples[,1:6])
+mcmc_intervals(output$samples[,1:6])
 ```
 
 ### ARMA order selection and traces (CPI)
@@ -1653,12 +1659,13 @@ output <- fit_JAGS(
   n_thin=3,
   n_adapt=2000,
   n_chain=n_chain,
-  n_iter=6000
+  n_iter=6000,
+  verbose=TRUE
 )
 
-mcmc_trace(output$samples[,1:8])
-mcmc_dens(output$samples[,1:8])
-mcmc_intervals(output$samples[,1:8])
+mcmc_trace(output$samples[,1:10])
+mcmc_dens(output$samples[,1:10])
+mcmc_intervals(output$samples[,1:10])
 ```
 
 ### Model selection
