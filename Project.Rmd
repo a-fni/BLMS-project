@@ -5,7 +5,9 @@ date: "2025-06-20"
 ---
 
 ```{r}
+
 rm(list=ls())
+suppressPackageStartupMessages({
 library(rjags)
 library(bayesplot)
 library(jagsUI)
@@ -13,6 +15,8 @@ library(glue)
 library(loo)
 library(knitr)
 library(kableExtra)
+  }
+)
 ```
 
 # Bayesian Learning & Monte-Carlo Simulation final project
