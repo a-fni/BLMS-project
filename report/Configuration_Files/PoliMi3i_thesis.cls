@@ -116,17 +116,17 @@
 			\\
 			{{\color{bluepoli} \singlespacing \huge \bfseries \thesistitle \par}}	
 			\vspace{1.5cm}
-			{\color{bluepoli} \bfseries \large{\textsc{Bayesian Learning Project\\ 
+			{\color{bluepoli} \bfseries \large{\textsc{Bayesian Learning and\\ Montecarlo Simulation Project\\ 
             \course }}\par}
 			\vspace{1.5 cm}
-			{\color{black} \Large {\textbf{Author}:} \bfseries{\name}}
+			{\color{black} \Large {\textbf{Authors}:} \bfseries{\name}}
 			\end{minipage}
 			\\
 			\vspace*{\fill}
 			\\
 			\begin{minipage}{0.85\textwidth}
 			\normalsize{
-			Student ID: {\ID}
+			Student IDs: {\ID}
 			\\
 			Professor: {\advisor}
 			\\

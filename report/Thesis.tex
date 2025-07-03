@@ -25,7 +25,7 @@
 \usepackage{multicol} % To write in multiple columns (executive summary)
 \setlength\columnsep{15pt} % Column separation in executive summary
 \setlength\parindent{0pt} % Indentation
-\raggedbottom  
+\raggedbottom
 
 % PACKAGES FOR TITLES
 \usepackage{titlesec}
@@ -130,13 +130,13 @@
 \puttitle{
 	title=Bayesian Beats of the US Economy, % Title of the thesis
 	name=\\Andrea Ferrarini \\Andrea Nardi\\Christian Giovanni Pesaturo\\Salim Salici, % Author Name and Surname
-	course=Computer Engineering (T2I), % Study Programme (in Italian)
+	course=Computer Science and Engineering (T2I), % Study Programme (in Italian)
 	ID= \\10751746\\
     \quad  10777415\\
     \quad  10794871\\
     \quad  10640001,
 	 % Student ID number (numero di matricola)
-	advisor= Prof. Federico Bassetti, % Supervisor name % Co-Supervisor name, remove this line if there is none
+	advisor= Federico Bassetti, % Supervisor name % Co-Supervisor name, remove this line if there is none
 	academicyear={2024-2025},  % Academic Year
 } % These info will be put into your Title page 
 
@@ -144,6 +144,10 @@
 %	PREAMBLE PAGES: ABSTRACT (inglese e italiano), EXECUTIVE SUMMARY
 %----------------------------------------------------------------------------
 
+% … Indice …
+\pagestyle{empty}
+\frontmatter            
+\tableofcontents        
 
 \startpreamble
 \setcounter{page}{1} % Set page counter to 1
@@ -190,7 +194,7 @@ To evaluate the dynamic behavior of the time series, we compute and visualize th
 
 \section{Dataset Overview}
 The original file \texttt{gdp\_inflation.csv} was pre-processed and aligned to guarantee a consistent length for both time series.
-The index measures price changes (as a percent change) from a previous year. In addition to the original unadjusted index distributed, the \textbf{Bureau of Labor Statistics} also releases a seasonally adjusted index. The unadjusted series reflects all factors that may influence a change in prices. 
+The seasonally adjusted indeces measure price changes (as a percent change) from the previous year. 
 In order to rigorously assess the predictive capabilities of the proposed models, the dataset was judiciously partitioned into two disjoint subsets: a training set and a test set. 
 \begin{itemize}
     \item The training set, comprising \textit{85\%} of the total observations, was employed to estimate the model parameters within a \textbf{Bayesian} framework.
@@ -260,7 +264,7 @@ As with the \textbf{\textit{AR}} case, we defined a generic JAGS implementation 
     \item \textbf{Precision:} $\tau \sim \mathrm{Gamma}(0.01,0.01)$\\
     Highly diffuse Gamma prior on the noise precision, accommodating both low and high variance regimes.
     \item \textbf{MA coefficient:} $
-\beta \sim \mathcal{N}\left(0, \frac{1}{100} \right)
+\beta \sim \mathcal{N}\left(0, 10 \right)
 $\\
 Normal prior on MA coefficients introduces slight shrinkage toward zero, offering a more regularized alternative to the uniform prior while preserving flexibility in capturing short-term shocks.
 
@@ -281,10 +285,10 @@ The motivation for selecting an \textbf{\textit{ARMA(p,q)}} model arises from th
     \item \textbf{Intercept:} $m_0 \sim \mathcal{N}(0,10^4)$\\
     An almost flat Normal prior that leaves the series mean entirely data-driven.
     \item \textbf{AR coefficient:}  
-    $\alpha \sim \mathcal{U}(-1,1)$\\
+    $\alpha \sim \mathcal{U}(-1.5,1.5)$\\
     Uniform prior enforcing the invertibility condition while remaining non-informative about the MA effect.
     \item \textbf{MA coefficient:}  
-     $\beta \sim \mathcal{N}\left(0, \frac{1}{100} \right)$\\
+     $\beta \sim \mathcal{N}\left(0, 10 \right)$\\
     Normal priors on ARMA coefficients provide mild regularization while allowing flexible dynamics.
     \item \textbf{Noise precision:}  
     $\tau \sim \mathrm{Gamma}(0.01,0.01)$\\
@@ -317,8 +321,8 @@ m_{0}
     $A_{i,j,o} \sim \mathcal{N}(0,\,10)$\\
     Weakly informative Normal prior centered at zero with variabce 0.1, gently shrinking cross-variable effect while allowing moderate dynamic interactions.
     \item \textbf{Innovation precision matrix:}  
-    $\boldsymbol{\tau} \sim \mathrm{Wishart}(R,\,3),\;\boldsymbol{\Sigma}=\boldsymbol{\tau}^{-1}$\\
-    Conjugate Wishart prior with scale \(R\) and minimal degrees of freedom \(\nu=3\), yielding a diffuse yet proper prior over the $\text{\itshape 2}\!\times\!\text{\itshape 2}$ covariance.
+    $\boldsymbol{\tau} \sim \mathrm{Wishart}(I,\,3),\;\boldsymbol{\Sigma}=\boldsymbol{\tau}^{-1}$\\
+    Conjugate Wishart prior with scale \(I\) and minimal degrees of freedom \(\nu=3\), yielding a diffuse yet proper prior over the $\text{\itshape 2}\!\times\!\text{\itshape 2}$ covariance.
     \item \textbf{Intercept vector:}  
     $m_{\text{gdp}},\,m_{\text{infl}} \sim \mathcal{N}(0,\,10^4),\;\mathbf{m}_0=\begin{pmatrix}m_{\text{gdp}}\\m_{\text{infl}}\end{pmatrix}$\\
     Nearly flat Normal priors on each intercept component, ensuring the long-run means are driven by the data.
@@ -332,7 +336,7 @@ The others priors that we use during our comparison are specified significantly 
 %-> Trace-Plot\\
 %-> Validation Set\\
 %\sout{---> SUDDIVISIONE GPD-CPI IN 2 SEZIONI SEPARATE}\\
-We now begin our discussion aimed at understanding the temporal dynamics within the \textbf{GDP} and, subsequently, \textbf{CPI} datasets through the application of \textbf{\textit{AR}}, \textbf{\textit{MA}}, \textbf{\textit{ARMA}}, and \textbf{\textit{VAR}} models. Our journey into the deeper structure of these models will unfold in two distinct stages: we will start with the analysis of \textbf{GDP}, followed by that of \textbf{CPI}. This sequence was chosen to support a smoother reading experience and a progressive understanding of the results.
+We now begin our discussion aimed at understanding the temporal dynamics within the \textbf{GDP} and, subsequently, \textbf{CPI} datasets through the application of \textbf{\textit{AR}}, \textbf{\textit{MA}}, \textbf{\textit{ARMA}}, and \textbf{\textit{VAR}} models. Our journey into the deeper structure of these models will unfold in two distinct stages: we will start with the analysis of \textbf{GDP}, followed by that of \textbf{CPI}.
 In this section, we present time series plots along with a discussion justifying the selected parameter values. We conclude with a brief qualitative comment on the observed dynamics.\\
 
 The next chapter will focus on model comparison using several evaluation criteria, including both complexity-penalized metrics and prediction accuracy scores:
@@ -438,7 +442,7 @@ This two-panel visualisation allows for a comprehensive assessment of the model'
 \restoregeometry
 
 \subsection*{Comparison of AR(1) and AR(4)}
-From the analysis of the plots in the figure, two clearly distinct behaviors emerge. The \textbf{\textit{AR(4)}} model, while being extremely responsive to the most recent movements, struggles to capture medium-term oscillations, which is reflected in wider uncertainty bands (yellow lines) immediately after the training/test split.
+From the analysis of the plots in the figure, two clearly distinct behaviors emerge. The \textbf{\textit{AR(1)}} model, while being extremely responsive to the most recent movements, struggles to capture medium-term oscillations, which is reflected in wider uncertainty bands (yellow lines) immediately after the training/test split.
 
 
 In contrast, the \textbf{\textit{AR(4)}} model incorporates information over a longer horizon, that is, the observed values of the time series in the four previous time points, absorbing peaks and drops more gradually: the forecast trajectory is smoother and the uncertainty bands are overall narrower in the out-of-sample. 
@@ -521,16 +525,7 @@ Ultimately, for our quarterly \textbf{U.S GDP} sample, the \textbf{\textit{ARMA(
     \includegraphics[angle=90,width=0.335\linewidth]{CPI_ZAR(1).png}
   \end{tabular}
 \end{figure}
-\begin{figure}[H]
-	    \centering
-	    \includegraphics[width=0.7\linewidth]{CPI_FAR(9).png}
-        \label{fig:CPI_FAR(9)}
-	\end{figure}
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.7\linewidth]{CPI_ZAR(9)-1.png}
-    \label{fig:CPI_ZAR(9)}
-\end{figure}
+
 
 \subsubsection*{Comparison of AR(1) and AR(4)}
 For the \textbf{CPI}, the comparison between \textbf{AR(1)} and \textbf{AR(4)} reveals dynamics analogous to those observed for the \textbf{GDP}, but on a more pronounced price‐change scale:
@@ -608,7 +603,7 @@ Overall, the choice of lag orders governs the trade-off between rapid shock abso
 
 \subsection*{Assessment of Contemporaneous Correlation through Prior Specification}
 
-The objective of our analysis is to determine whether a certain degree of correlation exists between the respective stochastic components of the two time series. To formally investigate the residuals estimated under a \textbf{\textbf{Wishart}} prior for the \textbf{GDP} and \textbf{CPI} series, we compute the \textit{Pearson} correlation coefficient, which allows us to quantify the strength and direction of the linear relationship between the error of two macroeconomic variables.
+The objective of our analysis is to determine whether a certain degree of correlation exists between the respective stochastic components of the two time series. To formally investigate the residuals estimated under a \textbf{\textbf{Wishart}} prior for the \textbf{GDP} and \textbf{CPI} series, we compute the \textit{Pearson} correlation coefficient, which allows us to quantify the strength and direction of the linear relationship between the errors of two macroeconomic variables.
 \label{Prior-VAR}
 \paragraph{Case 1: Diagonal Prior (Uncorrelated Errors)}
 Our empirical exploration will initially focus on the deliberate choice of a diagonal prior in order to impose a zero-correlation structure between the residuals of \textbf{GDP} and \textbf{CPI}. 
@@ -625,7 +620,7 @@ Consequently, given the absence of non-zero entries outside the diagonal in the 
 \]
 
 \paragraph{Case 2: Wishart Prior (Correlated Errors)}
-In contrast, by adopting a different \textbf{Wishart} prior, we allow the covariance between the residuals to be freely estimated. Accordingly, we define a precision matrix with non-zero entries outside the diagonal, as long as it remains positive definite, i.e., invertible and allowing the density to be well-defined. In this way, the model is able to estimate the strength of the correlation between \textbf{\textit{GDP}} and \textbf{\textit{CPI}} directly from the data. 
+In contrast, by adopting a \textbf{Wishart} prior, we allow the covariance between the residuals to be freely estimated. Accordingly, we define a precision matrix with non-zero entries outside the diagonal, as long as it remains positive definite, i.e., invertible and allowing the density to be well-defined. In this way, the model is able to estimate the strength of the correlation between \textbf{\textit{GDP}} and \textbf{\textit{CPI}} directly from the data. 
 \[
 \tau \sim \text{Wishart}(R, 3), \quad \text{where} \quad
 R = \begin{pmatrix}
@@ -636,15 +631,7 @@ R = \begin{pmatrix}
 
 This enables estimation of the off-diagonal covariance terms directly from the data.
 
-\paragraph{Empirical Results}
-The \textit{Pearson} correlation coefficient between the residuals obtained from the model with a Wishart prior is:
-\[
-\rho(\text{err}_{\mathrm{GDP}},\,\text{err}_{\mathrm{CPI}}) 
-= \frac{\text{Cov}(\text{err}_{\mathrm{GDP}}, \text{err}_{\mathrm{CPI}})}{
-\sqrt{\text{Var}(\text{err}_{\mathrm{GDP}}) \cdot \text{Var}(\text{err}_{\mathrm{CPI}})}} 
-= \frac{0.5529}{\sqrt{2.5871 \cdot 0.9521}} \approx 0.3523.
-\]
-Based on the result of the \textit{Pearson} correlation coefficient which allows us to test whether it is reasonable to assume correlation between the residuals and to quantify its intensity we can conclude that a value of approximately \texttt{0.35} represents a moderate and positive correlation.
+\newpage
 
 \textbf{Posterior Means}\\
 
@@ -676,7 +663,17 @@ A =
 \end{pmatrix}
 \]
 
-The correlation is not null, yet not dominant either: it improves, albeit slightly, the modeling of contemporaneous volatility, but it does not affect the lagged dynamics—indeed, the matrix \textit{A} remains nearly unchanged.\\
+\paragraph{Empirical Results}
+The \textit{Pearson} correlation coefficient between the residuals obtained from the model with a Wishart prior is:
+\[
+\rho(\text{err}_{\mathrm{GDP}},\,\text{err}_{\mathrm{CPI}}) 
+= \frac{\text{Cov}(\text{err}_{\mathrm{GDP}}, \text{err}_{\mathrm{CPI}})}{
+\sqrt{\text{Var}(\text{err}_{\mathrm{GDP}}) \cdot \text{Var}(\text{err}_{\mathrm{CPI}})}} 
+= \frac{0.5505}{\sqrt{2.5838 \cdot 0.9538}} \approx 0.3507.
+\]
+Based on the result of the \textit{Pearson} correlation coefficient which allows us to check whether it is reasonable to assume correlation between the residuals and to quantify its intensity we can conclude that a value of approximately \texttt{0.35} represents a moderate and positive correlation.
+
+The correlation is not null, yet not dominant either: it improves, albeit slightly, the modeling of contemporaneous volatility, but it does not affect the lagged dynamics—indeed, the matrix \textit{A} remains nearly unchanged.
 
 We specified these priors for the \textbf{\textit{VAR}} because, in sensitivity checks using alternative prior formulations, the estimated dynamic relationships did not change significantly.
 
@@ -696,13 +693,13 @@ We will then move on to a deeper examination of the ideal model choice, one that
 As shown in the two tables, each column corresponds to a distinct evaluation metric, while each row lists the candidate models grouped by model family along with their respective parametrizations.
 
 
-\textbf{\textit{Important note:}} we will principally rely on the \textbf{Bayesian Information Criterion} (BIC) as our primary selection criterion, since it most effectively balances out-of-sample predictive performance against model complexity.
+\textbf{\textit{Important note:}} we will principally rely on the \textbf{Bayesian Information Criterion} (BIC) as our primary selection criterion, since it most effectively balances in-sample predictive performance against model complexity.
 
 Finally, our discussion will also include visual diagnostics such as trace plots, density plots, and interval plots.
 
 The computed metrics indicate that \textbf{\textit{ARMA(2, 3)}} and \textbf{\textit{ARMA(3, 3)}} emerge as the top-performing models for both the \textbf{GDP} and \textbf{CPI}.
 
-Particularly noteworthy is the performance of the \textbf{\textit{AR(9)}} model on the \textbf{CPI} data: its out-of-sample forecast over the following 18 months, based solely on in-sample information, shows an almost perfect alignment with the observed values, as illustrated in the plot \ref{fig:CPI_FAR(9)} and \ref{fig:CPI_ZAR(9)}.
+Particularly noteworthy is the performance of the \textbf{\textit{AR(9)}} model on the \textbf{CPI} data: its out-of-sample forecast over the following 18 months, based solely on in-sample information, shows an almost perfect alignment with the observed values.
 
 \subsubsection{GDP-POWER}
 \begin{table}[H]
@@ -794,8 +791,8 @@ Particularly noteworthy is the performance of the \textbf{\textit{AR(9)}} model 
     MA(1)  & 800.4 & 792.4 & 797.1 & 1.861 & 1.175 & 918.7 & 52.5 & 1.743 \\
     MA(2)  & 738.2 & 726.2 & 724.4 & 1.335 & 0.974 & 661.7 & 47.1 & 1.444 \\
     MA(3)  & 573.2 & 561.1 & 571.5 & 0.590 & 0.592 & 450.3 & \textbf{33.7} & 0.878 \\
-    MA(4)  & 521.8 & 509.9 & 520.8 & 0.556 & 0.576 & 420.9 & 35.4 & 0.853 \\
-    MA(5)  & \textbf{553.2} & \textbf{526.7} & \textbf{534.7} 
+    MA(4)  & \textbf{521.8} & \textbf{509.9} & \textbf{520.8} & 0.556 & 0.576 & 420.9 & 35.4 & 0.853 \\
+    MA(5)  & 553.2 & 526.7 & 534.7
            & \textbf{0.468} & \textbf{0.529} & \textbf{334.9} & 34.7 & \textbf{0.785} \\
     \midrule
 \textbf{\textit{ARMA(\(p,q\))}} \\
@@ -824,6 +821,7 @@ Particularly noteworthy is the performance of the \textbf{\textit{AR(9)}} model 
     \bottomrule
   \end{tabular}
 \end{table}
+\label{CPI_TABLE}
 
 \underline{Caveat lector:} Because the VAR model is inherently multivariate, selection criteria, cannot be directly compared to those of AR, MA, or ARMA models. 
 %Therefore, we have presented the VAR performance metrics separately, rather than including them in the same comparative framework.
@@ -831,51 +829,169 @@ Particularly noteworthy is the performance of the \textbf{\textit{AR(9)}} model 
 \newpage
 %AR GDP
 \subsection{Into the Deeping Analysis}
+In the following section, we will analyze the trace plots, density plots and interval plots of the top‐performing models as determined by the metrics computed in the previous section.
+\subsubsection{GDP-SECTION}
 \subsection{Dissecting the \textbf{\textit{AR(9)}} Process: Posterior Insights}
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.50\linewidth]{GDP_AR(9)_TRACE1.png}
+    \includegraphics[width=0.47\linewidth]{AR(9)_trace.png}
     \vspace{0.5em}
     
-    \includegraphics[width=0.50\linewidth]{GDP_AR(9)_DENSITY1.png}
+    \includegraphics[width=0.47\linewidth]{AR(9)_Density.png}
     \vspace{0.5em}
     
-    \includegraphics[width=0.50\linewidth]{GDP_AR(9)_INTERVAL1.png}
+    \includegraphics[width=0.47\linewidth]{AR(9)_interval.png}
     % \caption{Trace plot, posterior density and credible intervals for GDP AR model}
 \end{figure}
-The MCMC diagnostics for our \textbf{\textit{AR(9)}} specification attest to both sampler reliability and strong data support. The trace plots reveal stable, well‐mixed chains without trends or autocorrelation, confirming that our posterior exploration was thorough and free of stuck modes. 
 
-Correspondingly, the posterior density curves are sharply unimodal particularly for the coefficients \(\alpha_{1}\) and \(\alpha_{9}\) indicating that the quarterly \textbf{GDP} observations furnish precise identification of these parameters. Altogether, these findings reinforce confidence in the \textbf{\textit{AR(9)}} model as a credible and well‐informed description of \textbf{U.S. GDP} dynamics.
 
+The trace plots for each of the nine \textbf{\textbf{AR}} coefficients, the intercept \(m_0\) , and the innovation variance \(\sigma^2\) show excellent mixing across all three chains: the chains rapidly traverse the same posterior region without any visible trends, drifts, or “stickiness.” This indicates that the sampler has converged and each chain is adequately exploring the posterior distribution.
+
+The density plots exhibit a single, well–defined mode for every parameter, confirming unimodality and a lack of multimodal ambiguity. Moreover, the \texttt{95 \% credible intervals} in the interval plot are relatively tight especially for \(\alpha_1\), \(\alpha_2\), \(\alpha_4\), \(\alpha_5\) and \(\alpha_9\), whose intervals do not include zero suggesting these lags are statistically significant contributors to the \textbf{\textit{AR(9)}} structure for \textbf{GDP}, whereas the middle lags \(\alpha_3\), \(\alpha_6\), \(\alpha_7\), \(\alpha_8\) have intervals overlapping zero and thus appear less influential.
 \newpage
 %MA_GDP
-\subsection{Unveiling the \textbf{\textit{MA(5)}} Structure: Visual Diagnostics}
+\subsection{Unveiling the \textbf{\textit{MA(3)}} Structure: Visual Diagnostics}
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.55\linewidth]{GDP_MA(5)_TRACE1.png}
+    \includegraphics[width=0.62\linewidth]{MA(3)_trace.png}
     \vspace{0.5em}
     
-    \includegraphics[width=0.55\linewidth]{GDP_MA(5)_DENSITY1.png}
+    \includegraphics[width=0.62\linewidth]{MA(3)_density.png}
     \vspace{0.5em}
     
-    \includegraphics[width=0.55\linewidth]{GDP_MA(5)_INTERVAL1.png}
+    \includegraphics[width=0.62\linewidth]{MA(3)_interval.png}
 \end{figure}
+\newpage
+The trace plots for the three \textbf{\textbf{MA}} coefficients \(\beta_1\), \(\beta_2\),  \(\beta_3\) , the intercept \(m_0\) and the innovation variance \(\sigma^2\) exhibit rapid mixing across all chains without any visible trends or stickiness. Each chain overlaps tightly and fluctuates around a stable mean from the start, indicating that the sampler has converged and is efficiently exploring the posterior for the \textbf{\textit{MA(3)}} model.
 
-The diagnostics for the \textbf{\textit{MA(5)}} model fitted to \textbf{U.S. GDP} reveal three key findings corroborating parameter estimation quality: firstly, \textbf{MCMC chains} are stationary and well‐mixed indicating satisfactory convergence, secondly, posterior density curves are unimodal and fairly tight especially for $\beta_1$ and $\beta_5$ reflecting strong data informativity, thirdly, all \texttt{95\%}  credible intervals lie within regions ensuring process invertibility and stability.
+All density plots are clearly unimodal and roughly symmetrical, except \(\beta_3\) which shows a veiled tail asymmetry tending to the right sidesymmetric. The \texttt{95 \% credible intervals} in the interval plot are narrowest for \(\beta_1\) (indicating high precision), slightly wider for \(\beta_2\), and still well‐contained away from zero for \(\beta_3\), signifying that all three \textbf{\textbf{MA}} lags are statistically distinguishable from zero. 
+
+In contrast, the intercept \(m_0\) shows a broader density reflecting greater uncertainty on its level and \(\sigma^2\) also has a moderately wide interval, consistent with natural variability in the innovation variance.
+
+\subsection{Deciphering the \textbf{\textit{ARMA(2,3)}} Dynamics: Visual Diagnostics}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.62\linewidth]{ARMA_trace.png}
+    \vspace{0.5em}
+    
+    \includegraphics[width=0.62\linewidth]{ARMA_density.png}
+    \vspace{0.5em}
+    
+    \includegraphics[width=0.62\linewidth]{ARMA_interval.png}
+\end{figure}
+\newpage  
+The trace plots for the estimated parameters \(\alpha_1\), \(\alpha_2\), \(\beta_1\), \(\beta_2\), \(\beta_3\), the intercept \(m_0\) and the innovation variance \(\sigma^2\) exhibit rapid mixing across all three chains, with no visible trends. Notably, the third AR trace \(\alpha_3\) is flat at zero and its density collapses to a vertical line because in the \textbf{\textit{ARMA(2,3)}} specification only \(\alpha_1\) and \(\alpha_2\) are estimated, while \(\alpha_3\) is fixed at 0.
+
+
+All posterior density plots are clearly unimodal and approximately symmetric, indicating a single dominant mode for each estimated parameter. However, there is a tendency for density plots to have a phase of inertia (spreading) tending to the right side of the distribution, in particoular \(\beta_1\) and \(\beta_3\) . Also at \(\alpha_2\) we can see a slight multimodality given by the division of the top with a dovetail effect, that is, with two maxima interspersed with a local minimum.  In the interval plot, the 95\% credible intervals for \(\alpha_1\), \(\alpha_2\), \(\beta_1\), \(\beta_2\) and \(\beta_3\) do not include zero, signifying that these lags are statistically significant contributors to the dynamics of the \textbf{\textit{ARMA(2,3)}} model. The wider intervals for \(m_0\) and \(\sigma^2\) reflect greater posterior uncertainty about the process mean and the variance of the innovations.
+
 
 \newpage
+\subsubsection{CPI-SECTION}
+\subsection{Dissecting the \textbf{\textit{AR(9)}} Process: Posterior Insights}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.57\linewidth]{AR(9)-trace.png}
+    \vspace{0.5em}
+    
+    \includegraphics[width=0.57\linewidth]{AR(9)-density.png}
+    \vspace{0.5em}
+    
+    \includegraphics[width=0.57\linewidth]{AR(9)-interval.png}
+\end{figure}
+\newpage
+A detailed inspection of the trace plots for the nine autoregressive parameters \(\alpha_1,\dots,\alpha_9\), along with the intercept \(m_0\) and innovation variance \(\sigma^2\), reveals that all three MCMC chains quickly coalesce into the same region and wander without any systematic trend or stagnation. Such behavior provides strong evidence that the sampler has properly converged and is thoroughly exploring the posterior under the \textbf{\textit{AR(9)}} specification for the CPI series.
+
+An examination of the posterior density plots shows a clear unimodal shape for every parameter, each featuring one dominant peak. The forest plot of the 95\% credible intervals highlights that \(\alpha_1\), \(\alpha_2\), and \(\alpha_9\) have intervals that exclude zero indicating these lags play a significant role in the dynamics whereas the middle coefficients \(\alpha_3\)–\(\alpha_8\) exhibit wider intervals overlapping zero, pointing to a weaker influence. 
+
+The broader uncertainty bands for \(m_0\) and \(\sigma^2\) reflect a higher degree of posterior uncertainty about the process mean and volatility of the innovations.
+
+\subsubsection{An Honorable Mention}
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{AR(9)_HM1.png}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{AR(9)_HM2.png}
+    \end{minipage}
+\end{figure}
+Based on the suite of evaluation metrics presented in Section~\ref{CPI_TABLE} (including RMSE, MAE and the information criteria AIC and BIC), the \textbf{\textit{ARMA(2,3)}} and \textbf{\textit{ARMA(3,3)}} specifications emerge as the most reliable for capturing both \textbf{GDP} and \textbf{CPI} dynamics. 
+
+These models consistently achieve the lowest forecast errors and strike an optimal balance between goodness of–fit and parsimony.  
+
+In particular, the \textbf{\textit{ARMA(2,3)}} delivers stable one–step–ahead predictions with minimal bias, while the \textbf{\textit{ARMA(3,3)}} excels at longer horizon forecasts, thanks to its additional moving–average component.
+
+An additional highlight goes to the \textbf{\textit{AR(9)}} model when applied to the \textbf{CPI} series: despite its higher complexity, its \textit{out–of–sample} projections over the next eighteen months align almost perfectly with the realized inflation rates, as vividly illustrated in the plot above.  Such accuracy underscores the model’s capacity to encapsulate long–memory effects in the \textbf{CPI}, justifying its inclusion among our top contenders.
+
+
+\subsection{Unveiling the \textbf{\textit{MA(4)}} Structure: Visual Diagnostics}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.62\linewidth]{MA(4)-trace.png}
+    \vspace{0.5em}
+    
+    \includegraphics[width=0.62\linewidth]{MA(4)-density.png}
+    \vspace{0.5em}
+    
+    \includegraphics[width=0.62\linewidth]{MA(4)-interval.png}
+\end{figure}
+% English description
+
+Inspection of the trace plots for the \(\beta_1,\dots,\beta_4\) coefficients, the intercept \(m_0\), and innovation variance \(\sigma^2\) in the \textbf{\textit{MA(4)}} model reveals that all three chains quickly converge to the same high–density regions without exhibiting long excursions or stickiness.  
+
+The chains for \(\beta_i\) and \(\sigma^2\) fluctuate tightly around stable means, while the \(m_0\) sampler shows occasional larger jumps yet still intermixes across chains suggesting overall adequate exploration of the posterior.
+
+As can be seen for the density plot relative to  \(\beta_1\) and \(\beta_2\), on the right side of the tail in closure, there is markedly a part where the density tends to increase slightly of pathological character that however in \(\beta_3\) and \(\beta_4\) tends to flatten out. Is inferred, a slight symmetrical a is evident toward the left side that increases as the order of b increases.  
+
+
+The posterior for \(m_0\) exhibits a clearly bimodal profile with two distinct shoulders, indicating either multimodality in the posterior landscape or slow mixing between subregions.  
+
+The density of \(\sigma^2\) is moderately skewed to the right, reflecting some uncertainty in the innovation variance.  The accompanying \texttt{95\% credible intervals} (shown in the interval plot) are tight for the \(\beta_i\), while the interval for \(m_0\) is notably wide and spans both modes, underscoring the need for further diagnostics or reparameterization.
+
+
+
+\subsection{Deciphering the \textbf{\textit{ARMA(3,3)}} Dynamics: Visual Diagnostics}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.62\linewidth]{ARMA-trace.png}
+    \vspace{0.5em}
+    
+    \includegraphics[width=0.62\linewidth]{ARMA-density.png}
+    \vspace{0.5em}
+    
+    \includegraphics[width=0.62\linewidth]{ARMA-interval.png}
+\end{figure}
+
+\textbf{Posterior Density Insights for \textbf{\textit{ARMA(3,3)}} Applied to CPI}
+\begin{itemize}
+  \item \(\alpha_1\): dominant mode at \texttt{0.37} with a secondary shoulder near \texttt{0.40}, indicating two plausible high–density regions.
+  \item \(\alpha_2\): pronounced left skew; main mass just above zero but a long left tail signals non‐negligible probability of negative values and uncertainty in second‐order AR effects.
+  \item \(\alpha_3\): it demonstrates uncertain density dynamics in the right side of the tail. That is, from left to right it rises without uncertainty, reaches the maximum in about 0.31, and the descent to the right side is fronted at 0.35 by a doubt in the descent that might imply a principle of mutimodality given by equally high front of approximate width 0.03 that struggles to descend.
+  \item \(\beta_1\): tight unimodal peak near \texttt{0.95} with an extended right tail, reflecting moderate uncertainty toward higher \textbf{\textit{MA(1)}} weights.
+  \item \(\beta_2\) \& \(\beta_3\): both display clear bimodality \(\beta_2\) around \texttt{1.00} and \texttt{1.08}, \(\beta_3\) near \texttt{0.90} and \texttt{0.95} suggesting the sampler alternates between two compatible \textbf{\textit{MA}} configurations.
+  \item \(m_0\) (intercept): two distinct peaks at \texttt{0.9} and \texttt{1.3}, pointing to multimodal inference for the overall level, likely driven by differing cyclical phases in the \textbf{CPI}.
+  \item \(\sigma^2\): a single, unimodal density centered at \texttt{0.45} with slight right skew, indicating moderate but well‐defined uncertainty in the innovation variance.
+\end{itemize}
+
+
 %VAR_GDP
 \subsection{Decoding the \textbf{\textit{VAR}} Mechanism: Multivariate Posterior Exploration}
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.55\linewidth]{GDP_VAR_TRACE1.png}
+    \includegraphics[width=0.62\linewidth]{VAR-trace.png}
     \vspace{0.5em}
     
-    \includegraphics[width=0.55\linewidth]{GDP_VAR_DENSITY1.png}
+    \includegraphics[width=0.62\linewidth]{VAR-density.png}
     \vspace{0.5em}
     
-    \includegraphics[width=0.55\linewidth]{GDP_VAR_INTERVAL1.png}
+    \includegraphics[width=0.62\linewidth]{VAR-interval.png}
 \end{figure}
+
+
 
 The figures display \textbf{MCMC Traces} posterior densities and \texttt{95\%} credible intervals for the \textbf{\textit{VAR(1)}} model parameters applied to \textbf{GDP} and \textbf{CPI}. Trace plots exhibit good mixing with no apparent drift. The density curves are unimodal and well‐concentrated especially for the entries of matrix \textbf{\textit{A}} indicating that the data strongly inform contemporaneous relationships. Credible intervals for
 \(\sigma^{2}\) align with stable shock variances overall these diagnostics support the reliability of our \textbf{\textit{VAR(1)}} inferences.
@@ -906,7 +1022,7 @@ Moreover, the area of good performance is limited, and choosing orders adjacent 
 
 %È possibile vedere direttamente con le tabelle, la corrispondenza esatta fra colore blu profondo e valore numerico evidenziato in bold nelle tabelle.
 
-The intense blue color represents the lowest numerical values of the metrics, corresponding to the optimal and thus most desirable outcomes in our analysis. Conversely, the red color indicates higher values: the greater the saturation of the red hue, the higher the numerical value, implying a poorer capability of the model to accurately represent out-of-sample dynamics.
+The intense \textbf{blue color} represents the lowest numerical values of the metrics, corresponding to the optimal and thus most desirable outcomes in our analysis. Conversely, the \textbf{red color} indicates higher values: the greater the saturation of the red hue, the higher the numerical value, implying a poorer capability of the model to accurately represent out-of-sample dynamics.
 
 Furthermore, it is visually straightforward, by directly comparing tables \ref{GDP_TABLE} and heatmaps, to confirm the exact correspondence between intensely blue areas and the numerical values highlighted in \textbf{bold}.
 \newpage
