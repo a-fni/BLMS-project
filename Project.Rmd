@@ -554,7 +554,7 @@ model {
 We now define a generic $\text{MA}(n)$ process. The memory order $n$ is passed to the model by means of the `order` variable.
 
 $$
-y(t) = \left[ \sum_{i=1}^n \alpha_i \eta(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
+y(t) = \left[ \sum_{i=1}^n \beta_i \eta(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2)
 $$
 
 For any order $n ≥ 1$ the following model will correctly implement a $\text{MA}(n)$ process, which allows us to automatically test multiple MA processes easily and at once.
@@ -623,7 +623,7 @@ model {
 Finally, the following model will merge the two previous models defining an $\text{ARMA}(p, q)$ model.
 
 $$
-y(t) = \left[ \sum_{i=1}^p \beta_i y(t-i) \right] + \left[ \sum_{i=1}^q \alpha_i \eta(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2).
+y(t) = \left[ \sum_{i=1}^p \alpha_i y(t-i) \right] + \left[ \sum_{i=1}^q \beta_i \eta(t-i) \right] + \eta(t) \qquad \eta \sim \mathcal{N}(0, \sigma^2).
 $$
 
 The parameters `order_ar` and `order_ma` allow us to specify the two orders when simulating the model so as to be able to test all possible combinations of auto-regressive and moving-average processes.
@@ -1676,7 +1676,7 @@ An honorable mention must be given to the $\text{AR}(9)$ model for the CPI time 
 
 ```{r}
 if (intense) {
-  visualise(x_axis, series_CPI, output_ar9_cpi, title=glue("CPI series, AR({order})"))
+  visualise(x_axis, series_CPI, output_ar9_cpi, title=glue("CPI series, AR(9)"))
 }
 ```
 
