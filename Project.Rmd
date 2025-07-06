@@ -29,7 +29,7 @@ Setting up environment, importing the dataset and visualising a graph of the two
 rm(list=ls())
 
 # If set to TRUE higher order models will also be trained
-intense = FALSE
+intense = TRUE
 
 # New Family Houses Sold: United States
 # Source: https://fred.stlouisfed.org/series/HSN1F
